@@ -22,8 +22,10 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-      # `npm install`, not `npm ci`: deps like @tailwindcss/oxide ship per-OS native
-      # binaries and our lockfile is generated on Windows. `npm install` re-resolves the
-      # correct Linux binary on the runner; `npm ci` only installs what's already locked.
-      - run: npm install --no-audit --no-fund
+      # Regenerate the lockfile on the Linux runner before installing. Our committed
+      # lockfile is generated on Windows, and npm omits other platforms' native binaries
+      # for nested optional deps (npm/cli#4828) — e.g. @tailwindcss/oxide's Linux binary.
+      # `npm install` alone won't backfill it; removing the lockfile first forces a clean
+      # Linux resolution. (Phase 2: a Docker-generated Linux lockfile lets us use `npm ci`.)
+      - run: rm -f package-lock.json && npm install --no-audit --no-fund
       - run: npm run build
