@@ -22,5 +22,8 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-      - run: npm ci
+      # `npm install`, not `npm ci`: deps like @tailwindcss/oxide ship per-OS native
+      # binaries and our lockfile is generated on Windows. `npm install` re-resolves the
+      # correct Linux binary on the runner; `npm ci` only installs what's already locked.
+      - run: npm install --no-audit --no-fund
       - run: npm run build

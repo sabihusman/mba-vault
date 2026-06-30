@@ -24,7 +24,8 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-      - run: npm ci
+      # `npm install` (not `npm ci`) — see build.yml: cross-platform native binaries.
+      - run: npm install --no-audit --no-fund
 
       # Unit tests across both workspaces
       - run: npm run test:unit
