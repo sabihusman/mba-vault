@@ -82,26 +82,45 @@ to https; killing the timer triggers the dead-man's-switch alert.
 
 ---
 
-## 3. Network & host hardening  ⬜ (Phase 2)
+## 3. Network & host hardening  ✅ (Phase 2 — SSH / firewall / fail2ban / auto-updates done; nginx + TLS on 80/443 tracked in §2)
 
-**Why:** Keep the attack surface to the few ports we actually need — and no more.
+**Why:** Keep the attack surface to the few ports we need, make remote login key-only, and
+auto-ban brute-force noise + auto-patch the OS.
 
-**Plan:**
-- Firewall: **443 + 22 + 80**.
-  - **443** — HTTPS (the app, via nginx).
-  - **22** — SSH (key-only).
-  - **80** — **ACME http-01 challenge + http→https redirect ONLY.** No app content is served on
-    80. It must be world-reachable: Let's Encrypt validates from many unpublished IPs
-    (multi-perspective validation), so 80 can't be locked to a source IP. Without 80 open, the
-    IP cert's daily renewal fails and HTTPS lapses within a week — see §2. This replaces the
-    earlier "443 + 22 only" plan, which contradicted the cert's renewal method.
-- SSH: **key-based login only**, passwords disabled.
-- **fail2ban** bans IPs that brute-force SSH (and, later, the app login).
-- Automatic security updates.
+**Firewall — `ufw` (done):** default **deny incoming / allow outgoing**; `22/tcp` **LIMIT**
+(rate-limit throttle, on top of fail2ban), `80/tcp` and `443/tcp` **ALLOW** (IPv4 + IPv6). Rules
+were added *before* `ufw enable`, 22 first, so there was no lockout window.
+- **443** — HTTPS (the app, via nginx).
+- **22** — SSH (key-only, below).
+- **80** — **ACME http-01 challenge + http→https redirect ONLY.** No app content on 80. It must be
+  world-reachable: Let's Encrypt validates from many unpublished IPs (multi-perspective
+  validation), so 80 can't be source-IP-locked. Without 80 open, the IP cert's daily renewal
+  fails and HTTPS lapses within a week (see §2). This supersedes the earlier "443 + 22 only" plan,
+  which contradicted the renewal method.
 
-**How to verify (when built):** `ss -tlnp` shows only 22/80/443 public; `curl -sI http://<ip>/`
-is a 301 to https (80 serves nothing else); SSH password login refused; `fail2ban-client status
-sshd` lists bans after repeated bad logins.
+**SSH — key-only (done):** publickey-only **ed25519** auth; the private key + passphrase stay on
+the owner's machine, only the `.pub` is in the server's `~/.ssh/authorized_keys`. Hardened via
+drop-in `/etc/ssh/sshd_config.d/10-mba-vault-hardening.conf` (`PasswordAuthentication no`,
+`KbdInteractiveAuthentication no`, `PubkeyAuthentication yes`, `PermitRootLogin prohibit-password`).
+ssh is **socket-activated**, so changes were applied with `systemctl restart ssh.socket` after
+`sshd -t` validated them. Out-of-band backstop: the Hetzner **VNC console** (OS root password),
+which is independent of sshd.
+
+**fail2ban (done):** `[sshd]` jail, `backend = systemd` (reads the journal — correct for
+socket-activated ssh), `maxretry 5` / `findtime 10m` / `bantime 1h` with `bantime.increment = true`.
+With password auth off this mainly sheds bot noise and escalates repeat offenders. The owner's home
+IP can be added to `ignoreip` as self-ban insurance.
+
+**Automatic security updates (done):** `unattended-upgrades` armed via
+`/etc/apt/apt.conf.d/20auto-upgrades` (daily package-list refresh + unattended security upgrades).
+Kernel updates need a reboot — currently **manual** (optional `Automatic-Reboot` at 04:00 available).
+
+**How to verify:**
+- `sshd -T | grep -i passwordauthentication` → `no`; from another host
+  `ssh -o PubkeyAuthentication=no root@<ip>` → `Permission denied (publickey).`
+- `ufw status verbose` → deny incoming; `22 LIMIT`, `80/443 ALLOW`; a fresh SSH session still connects.
+- `fail2ban-client status sshd` → jail active.
+- `systemctl status unattended-upgrades` → active; `unattended-upgrades --dry-run --debug` lists allowed origins.
 
 ---
 
