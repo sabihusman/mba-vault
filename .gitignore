@@ -1,0 +1,49 @@
+# ───────────────────────────────────────────────────────────────────────────
+# MBA-Vault .gitignore
+# This repo is PUBLIC. Treat this file as load-bearing: the Gemini key, the
+# coursework documents, and the vector index must NEVER be committed.
+# ───────────────────────────────────────────────────────────────────────────
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# Next.js / build output
+app/.next/
+app/out/
+app/build/
+**/dist/
+*.tsbuildinfo
+app/next-env.d.ts
+
+# Test artifacts
+coverage/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Environment & secrets  ─ never commit (this is a public repo)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Coursework data: documents + vector index live on the mounted volume, not git
+/data/
+*.index
+*.vec
+*.embeddings
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+yarn-error.log*
+.idea/
+.vscode/*
+!.vscode/extensions.json

@@ -1,0 +1,53 @@
+# Deploy to Hetzner over SSH (build the Docker image, restart via docker-compose).
+#
+# ┌─ NOT WIRED UP YET ────────────────────────────────────────────────────────┐
+# │ This deploys to the Hetzner box, which is provisioned in Phase 2 (server   │
+# │ prep). Until the server, Dockerfile, docker-compose.yml, and the repo      │
+# │ secrets below exist, it runs ONLY on manual trigger so it can't spam       │
+# │ failures on every push to main.                                            │
+# │                                                                            │
+# │ Phase 2 TODO to "turn it on":                                              │
+# │   1. Add the Dockerfile + docker-compose.yml.                              │
+# │   2. Add repo secrets: SSH_HOST, SSH_USER, SSH_PRIVATE_KEY, GEMINI_API_KEY.│
+# │   3. Replace `on: workflow_dispatch` with the `push` trigger shown below.  │
+# │ Deploy is intentionally NOT a required status check — it must never block  │
+# │ a PR merge.                                                                 │
+# └────────────────────────────────────────────────────────────────────────────┘
+name: deploy
+
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- The real pipeline, ready for Phase 2 once the server + secrets exist. ---
+      # - name: Set up SSH
+      #   run: |
+      #     install -m 700 -d ~/.ssh
+      #     echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+      #     chmod 600 ~/.ssh/id_ed25519
+      #     ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+      #
+      # - name: Sync code and deploy
+      #   run: |
+      #     rsync -az --delete --exclude '.git' ./ \
+      #       "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/mba-vault/app/"
+      #     ssh "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+      #       "cd /opt/mba-vault && GEMINI_API_KEY='${{ secrets.GEMINI_API_KEY }}' \
+      #        docker compose up -d --build"
+      - name: Placeholder
+        run: echo "Deploy is configured but disabled until Phase 2 (server prep). See comments above."

@@ -1,0 +1,22 @@
+{
+  "name": "mba-vault",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Private, mobile-ready PWA over MBA & Product School coursework — browse + cited Q&A (RAG).",
+  "workspaces": [
+    "app",
+    "ingestion"
+  ],
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace app",
+    "build": "npm run build --workspace app",
+    "start": "npm run start --workspace app",
+    "lint": "npm run lint --workspace app",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test:unit": "npm run test --workspaces --if-present",
+    "test:e2e": "npm run test:e2e --workspace app"
+  }
+}
