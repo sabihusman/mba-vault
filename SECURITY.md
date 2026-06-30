@@ -54,31 +54,54 @@ password; session cookie shows `HttpOnly; Secure; SameSite` in dev tools.
 (secure-context) and for service workers.
 
 **Plan (decided: no domain → Let's Encrypt IP certificate):**
-- Public HTTPS via a **Let's Encrypt IP certificate** (short-lived, ~6.7 days).
-- **`lego`** issues/renews it with the `shortlived` ACME profile (Caddy can't issue certs
-  for a bare IP). A **daily** systemd timer renews early (cert is too short-lived for the
-  default 30-day window) and reloads the proxy.
+- Public HTTPS via a **Let's Encrypt IP certificate** (short-lived, ~6.7 days), issued for the
+  box's bare public IP under the `shortlived` ACME profile.
+- **`lego`** issues/renews it using the **http-01 challenge in webroot mode**: nginx stays up
+  permanently and serves the validation file `lego` writes under the ACME webroot
+  (`/.well-known/acme-challenge/`). No port juggling, no renewal downtime.
+  - *Why http-01 and not the alternatives:* **tls-alpn-01** runs over 443 — which nginx already
+    owns — so it would force either daily nginx downtime or fragile ALPN routing; **dns-01**
+    can't be used for a bare IP (nothing to put in DNS). **Caddy** is not used to *issue* the
+    cert either: it can't issue Let's Encrypt certs for a bare IP.
+  - This is **why port 80 must be open** (see §3). It serves only the ACME challenge and an
+    http→https redirect.
+- A **daily** systemd timer renews early — the cert is far too short-lived for `lego`'s default
+  30-day renewal window, so we force renewal while several days of life remain — and reloads nginx.
 - A **dead-man's-switch alert** fires if a renewal is missed — a silent 2-day outage already
   burns a third of the cert's life.
-- The Next.js app binds to **localhost**; a reverse proxy terminates TLS and forwards to it.
+- The Next.js app binds to **localhost**; nginx terminates TLS on 443 and forwards to it.
+
+**Before writing the renewal script (implementation-time check):** re-confirm against current
+Let's Encrypt docs that **http-01 is accepted for a bare-IP identifier under the `shortlived`
+profile**, plus the exact `lego` webroot flags. (Prior research: http-01 and tls-alpn-01 are
+supported for IP certs and dns-01 is not — but verify before relying on it.)
 
 **How to verify (when built):** `openssl s_client -connect <ip>:443 | openssl x509 -noout -dates`
-shows a ~6-day window that keeps moving forward day to day; killing the timer triggers the alert.
+shows a ~6-day window that keeps moving forward day to day; `curl -sI http://<ip>/` returns a 301
+to https; killing the timer triggers the dead-man's-switch alert.
 
 ---
 
 ## 3. Network & host hardening  ⬜ (Phase 2)
 
-**Why:** Shrink the attack surface to the two ports we actually need.
+**Why:** Keep the attack surface to the few ports we actually need — and no more.
 
 **Plan:**
-- Firewall: **443 + 22 only**.
+- Firewall: **443 + 22 + 80**.
+  - **443** — HTTPS (the app, via nginx).
+  - **22** — SSH (key-only).
+  - **80** — **ACME http-01 challenge + http→https redirect ONLY.** No app content is served on
+    80. It must be world-reachable: Let's Encrypt validates from many unpublished IPs
+    (multi-perspective validation), so 80 can't be locked to a source IP. Without 80 open, the
+    IP cert's daily renewal fails and HTTPS lapses within a week — see §2. This replaces the
+    earlier "443 + 22 only" plan, which contradicted the cert's renewal method.
 - SSH: **key-based login only**, passwords disabled.
 - **fail2ban** bans IPs that brute-force SSH (and, later, the app login).
 - Automatic security updates.
 
-**How to verify (when built):** `ss -tlnp` shows only 22/443 public; SSH password login refused;
-`fail2ban-client status sshd` lists bans after repeated bad logins.
+**How to verify (when built):** `ss -tlnp` shows only 22/80/443 public; `curl -sI http://<ip>/`
+is a 301 to https (80 serves nothing else); SSH password login refused; `fail2ban-client status
+sshd` lists bans after repeated bad logins.
 
 ---
 
