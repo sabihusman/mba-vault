@@ -19,6 +19,9 @@ const nextConfig: NextConfig = {
   // Produce a self-contained server build for the Docker image (we run our own
   // Node server on Hetzner — no Vercel).
   output: "standalone",
+  // MBA-Vault is served under /vault on the box (nginx path-routes: the study guide
+  // owns /, this app owns /vault). basePath prefixes routes and /_next assets.
+  basePath: "/vault",
   // Don't advertise the framework/version to clients.
   poweredByHeader: false,
   async headers() {

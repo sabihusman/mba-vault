@@ -26,10 +26,8 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "MBA-Vault",
   },
-  icons: {
-    icon: "/icon.svg",
-    apple: "/icon.svg",
-  },
+  // Tab icon comes from the app/favicon.ico convention (basePath-aware); the PWA
+  // icons are declared in the manifest. Avoids hardcoding the /vault prefix here.
   formatDetection: { telephone: false },
 };
 
