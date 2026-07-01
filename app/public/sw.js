@@ -1,18 +1,22 @@
 /*
  * MBA-Vault service worker — offline browse shell.
  *
+ * Served at /vault/sw.js, so its scope is /vault/ — it only ever sees requests for
+ * MBA-Vault, never the study guide at / or the /wellmark app. All cached paths are
+ * therefore /vault-prefixed.
+ *
  * Strategy:
- *  - Precache a tiny app shell on install ("/" and "/offline").
+ *  - Precache a tiny app shell on install ("/vault" and "/vault/offline").
  *  - Navigations: network-first, fall back to cache, then the offline page.
  *  - Static assets: stale-while-revalidate (fast, self-healing).
  *  - The Ask API and auth routes are never cached — they must hit the network.
  *
  * Bump VERSION to roll out a new cache and evict the old ones.
  */
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL_CACHE = `mbav-shell-${VERSION}`;
 const RUNTIME_CACHE = `mbav-runtime-${VERSION}`;
-const APP_SHELL = ["/", "/offline"];
+const APP_SHELL = ["/vault", "/vault/offline"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -46,7 +50,9 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return; // only handle our own origin
 
   // Never serve the Ask API or auth from cache — they need the live network.
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/ask")) return;
+  if (url.pathname.startsWith("/vault/api/") || url.pathname.startsWith("/vault/ask")) {
+    return;
+  }
 
   // Navigations: try the network, fall back to cache, then the offline page.
   if (request.mode === "navigate") {
@@ -60,7 +66,7 @@ self.addEventListener("fetch", (event) => {
         .catch(() =>
           caches
             .match(request)
-            .then((cached) => cached || caches.match("/offline")),
+            .then((cached) => cached || caches.match("/vault/offline")),
         ),
     );
     return;

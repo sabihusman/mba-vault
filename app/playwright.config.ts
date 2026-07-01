@@ -23,7 +23,8 @@ export default defineConfig({
   ],
   webServer: {
     command: "npm run dev",
-    url: "http://localhost:3000",
+    // App is under basePath /vault; root returns 404, so probe the app's real entry.
+    url: "http://localhost:3000/vault",
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
   },

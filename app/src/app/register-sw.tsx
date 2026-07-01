@@ -10,8 +10,10 @@ export function RegisterSW() {
     if (!("serviceWorker" in navigator)) return;
 
     const register = () => {
+      // Served at /vault/sw.js (basePath); its default scope is therefore /vault/,
+      // so it can never intercept the study guide at / or the /wellmark app.
       navigator.serviceWorker
-        .register("/sw.js", { scope: "/", updateViaCache: "none" })
+        .register("/vault/sw.js", { scope: "/vault/", updateViaCache: "none" })
         .catch((err) => console.error("Service worker registration failed:", err));
     };
 
