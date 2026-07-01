@@ -131,7 +131,37 @@ Kernel updates need a reboot — currently **manual** (optional `Automatic-Reboo
 
 ---
 
-## 4. Application-level limits  ⬜ (Phase 7 — `/ask`)
+## 4. CI/CD deploy key  ✅ (Phase 2)
+
+**Why:** Pushes to `main` auto-redeploy the box over SSH. That means a key with server
+access lives in GitHub. We shrink its blast radius so a leak can't do more than re-pull an
+already-public image.
+
+**How it's built:**
+- **Dedicated, passphraseless key** (`ed25519`), separate from the personal admin key. CI
+  can't type a passphrase — so the passphrase protection is replaced by the forced command below.
+- **Forced command.** The server-side `authorized_keys` entry for this key is prefixed:
+  `command="/opt/mba-vault/deploy.sh",no-agent-forwarding,no-port-forwarding,no-x11-forwarding,no-pty …`.
+  sshd runs **only** `deploy.sh` no matter what the client requests — no shell, no tunnel,
+  no file access. A leaked CI key can only trigger a redeploy.
+- **`deploy.sh`** (root-owned, `755`): `docker compose pull && docker compose up -d`, prune,
+  then a loopback health check on `/vault/api/health`.
+- **Host-key pinning.** The runner trusts the box via a `SSH_KNOWN_HOSTS` secret verified
+  against the fingerprint already in the operator's `known_hosts` — not blind TOFU.
+- **No registry creds on the box:** the GHCR image is public, so `docker compose pull` needs
+  no login and there are no registry secrets server-side.
+- **GitHub secrets:** `SSH_HOST`, `SSH_USER` (`root`), `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS`.
+  The private key is set via `gh secret set … < file` and never appears in the repo or chat.
+
+**Verify:**
+- `ssh -i deploy_key root@<ip> "cat /etc/passwd"` → still runs `deploy.sh`, ignores the command.
+- `ssh -i deploy_key -N root@<ip>` (tunnel attempt) → rejected (`no-port-forwarding`).
+- A push to `main` shows the `deploy` job green; `docker inspect -f '{{.Image}}' mba-vault` on the
+  box matches the new digest; `/vault` serves the new build.
+
+---
+
+## 5. Application-level limits  ⬜ (Phase 7 — `/ask`)
 
 **Why:** Protects both the data and the Gemini bill if the URL is discovered.
 
@@ -139,7 +169,7 @@ Kernel updates need a reboot — currently **manual** (optional `Automatic-Reboo
 
 ---
 
-## 5. LLM hardening  ⬜ (Phase 8)
+## 6. LLM hardening  ⬜ (Phase 8)
 
 **Why:** Keep the model on-task and limit prompt-injection blast radius (mitigated, not
 eliminated — acceptable for one user over their own documents).
