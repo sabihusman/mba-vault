@@ -48,37 +48,44 @@ password; session cookie shows `HttpOnly; Secure; SameSite` in dev tools.
 
 ---
 
-## 2. Transport & HTTPS  ⬜ (Phase 2 — "Server prep")
+## 2. Transport & HTTPS  ✅ (Phase 2 — live)
 
 **Why:** HTTPS protects the login and session in transit and is required for a PWA
 (secure-context) and for service workers.
 
-**Plan (decided: no domain → Let's Encrypt IP certificate):**
-- Public HTTPS via a **Let's Encrypt IP certificate** (short-lived, ~6.7 days), issued for the
-  box's bare public IP under the `shortlived` ACME profile.
-- **`lego`** issues/renews it using the **http-01 challenge in webroot mode**: nginx stays up
-  permanently and serves the validation file `lego` writes under the ACME webroot
-  (`/.well-known/acme-challenge/`). No port juggling, no renewal downtime.
-  - *Why http-01 and not the alternatives:* **tls-alpn-01** runs over 443 — which nginx already
-    owns — so it would force either daily nginx downtime or fragile ALPN routing; **dns-01**
-    can't be used for a bare IP (nothing to put in DNS). **Caddy** is not used to *issue* the
-    cert either: it can't issue Let's Encrypt certs for a bare IP.
-  - This is **why port 80 must be open** (see §3). It serves only the ACME challenge and an
-    http→https redirect.
-- A **daily** systemd timer renews early — the cert is far too short-lived for `lego`'s default
-  30-day renewal window, so we force renewal while several days of life remain — and reloads nginx.
-- A **dead-man's-switch alert** fires if a renewal is missed — a silent 2-day outage already
-  burns a third of the cert's life.
-- The Next.js app binds to **localhost**; nginx terminates TLS on 443 and forwards to it.
+**What's live (no domain → Let's Encrypt IP certificate):**
+- Public HTTPS via a **Let's Encrypt IP certificate** for the box's bare public IP under the
+  **`shortlived`** ACME profile — **~6.7-day** lifetime.
+- **`lego` v5.2.2** issues/renews it with the **http-01 challenge in webroot mode**: nginx stays up
+  and serves the token `lego` writes to `/var/www/acme/.well-known/acme-challenge/`. No port
+  juggling, no renewal downtime.
+  - *Why http-01:* **tls-alpn-01** runs over 443 (nginx owns it) → daily downtime or fragile ALPN
+    routing; **dns-01** can't be used for a bare IP. **Caddy** can't issue bare-IP certs at all and
+    was disabled + `systemctl mask`ed.
+  - This is **why port 80 is open** (§3): ACME challenge + http→https redirect only.
+- **Config lives in `/etc/lego/lego.env`** (`LEGO_*` vars: email, server, http, http.webroot,
+  domains, profile, path). lego reads them from the environment, so no long `--flags` are typed.
+- **Renewal** is a systemd **timer** (`lego-renew.timer`, twice daily, randomized, `Persistent`)
+  running `lego-renew.service` → **`lego run`** (lego 5.x unified obtain+renew: it renews only when
+  inside the window — ~½ lifetime for short-lived certs — otherwise a safe no-op) → **reloads nginx**
+  so the new cert is actually served (nginx caches the old one in memory otherwise).
+- **Dead-man's-switch:** the service pings a healthchecks.io check on each successful run; if a
+  renewal fails *or* the timer stops firing, the missing ping raises an alert — the scariest silent
+  failure for a 6.7-day cert.
+- The apps bind to **localhost**; nginx terminates TLS on 443.
 
-**Before writing the renewal script (implementation-time check):** re-confirm against current
-Let's Encrypt docs that **http-01 is accepted for a bare-IP identifier under the `shortlived`
-profile**, plus the exact `lego` webroot flags. (Prior research: http-01 and tls-alpn-01 are
-supported for IP certs and dns-01 is not — but verify before relying on it.)
+**One cert, three path-scoped tenants** (one IP, so no hostname vhosts): `/` static study guide,
+`/vault` MBA-Vault, `/wellmark` basic-auth reverse proxy. Fronting `/wellmark` with HTTPS also
+closed a real leak — its basic-auth credentials previously went over :80 in **cleartext**; the
+password was **rotated** (new bcrypt `htpasswd`) at the same time.
 
-**How to verify (when built):** `openssl s_client -connect <ip>:443 | openssl x509 -noout -dates`
-shows a ~6-day window that keeps moving forward day to day; `curl -sI http://<ip>/` returns a 301
-to https; killing the timer triggers the dead-man's-switch alert.
+**How to verify:**
+- `openssl x509 -in /etc/lego/certificates/<server-ip>.crt -noout -enddate` → a ~6–7-day window
+  that keeps advancing day to day.
+- `systemctl list-timers lego-renew.timer` → next run; `journalctl -u lego-renew.service` → on
+  no-op days, `Skip renewal … can be performed in Nd`.
+- `curl -sI http://<server-ip>/` → `301` to https; from outside, `openssl s_client -connect
+  <server-ip>:443` serves the IP cert.
 
 ---
 
