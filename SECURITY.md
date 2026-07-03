@@ -28,23 +28,49 @@ makes "no secret ever reaches git" a hard requirement, not a nicety.
 
 ---
 
-## 1. Authentication  ⬜ (Phase 3 — "Auth first")
+## 1. Authentication  ✅ (Phase 3 — live in prod 2026-07-03)
 
 **Why:** With the app public, a guessed/stolen credential is the whole game. So: a strong
 unique password, hashed with a memory-hard algorithm; a second factor; and lockout so the
 login can't be brute-forced.
 
-**Plan:**
-- Session via encrypted, **http-only, Secure, SameSite** cookie (`iron-session`). http-only
-  keeps JavaScript (and XSS) from reading it; Secure keeps it off plain HTTP; SameSite blunts
-  CSRF. Sensible expiry.
-- Password hashed with **Argon2id** (`argon2`).
-- **TOTP 2FA** (`otplib`/`otpauth`) — authenticator-app codes, low effort, high value.
-- **Login rate-limiting + lockout** (`rate-limiter-flexible`, in-memory): throttle per IP
-  and lock an account after N failed attempts.
+**What's built:**
+- **Session** = an encrypted, sealed cookie (`iron-session`, no store/DB): `mba_vault_session`,
+  **`HttpOnly`** (JS/XSS can't read it), **`Secure`** in production (off plain HTTP), **`SameSite=Lax`**
+  (blunts CSRF), and **`Path=/vault`** so it's never sent to the other tenants on the box
+  (`/` study guide, `/wellmark`). 7-day expiry.
+- **No user table.** One user ⇒ credentials are env vars on the box (`SESSION_SECRET`,
+  `AUTH_USERNAME`, `AUTH_PASSWORD_HASH`, `TOTP_SECRET`), generated **offline** by
+  `npm run provision:auth` and pasted into `.env` — nothing secret in git, no mutable auth state
+  on the server except in-memory lockout counters.
+- **Password** hashed with **Argon2id** (`@node-rs/argon2`, `m=19456,t=2,p=1`).
+- **TOTP 2FA** (`otpauth`), ±1-step clock-skew window.
+- **Single-step login** — username + password + 6-digit code in one POST. This deliberately avoids
+  a two-step flow's *password-confirmed oracle* (a 2-step form tells an attacker when the password
+  alone is right). Every failure returns **one generic message**; argon2 runs **even on a wrong
+  username** (no timing oracle) and the username compare is constant-time.
+- **Dual lockout** (`rate-limiter-flexible`, in-memory): **per-IP (10)** *and* **per-username (5)**,
+  15-min window/block, reset on success. Behind nginx the socket peer is always `127.0.0.1`, so the
+  real client IP is read from **`X-Real-IP`** (nginx-set), falling back to the leftmost
+  `X-Forwarded-For`, then `"unknown"` (safe-by-default: all attackers share one bucket rather than
+  spoofing fresh keys).
+- **Route gate** = Next 16 **`proxy.ts`** (the renamed middleware; Node runtime). It unseals the
+  cookie with `unsealData` and **fails closed** — any missing/tampered/expired/wrong-secret cookie
+  is "not logged in". Unauthenticated pages → redirect to `/vault/login`; `/api/*` → `401`. The
+  public allowlist lives in a tested `isPublicPath()` (login flow, `/api/health`, PWA shell/sw/
+  manifest/icons, offline); the bare root `/` is gated explicitly. Logout (`POST /vault/api/logout`)
+  destroys the cookie.
 
-**How to verify (when built):** wrong password N times → locked out; 2FA required after
-password; session cookie shows `HttpOnly; Secure; SameSite` in dev tools.
+**Operational lesson (learned the hard way):** `/api/health` **must stay public**, or the
+docker-compose healthcheck and the deploy smoke test (which probe it unauthenticated) get `401`
+and **every deploy fails**. The flip side: a *green* deploy does **not** prove login works, because
+the healthcheck needs no secret — if the box `.env` is missing the auth vars, `/vault/login` `500`s
+while health still reports `200`. Provision all four vars before trusting a deploy.
+
+**How to verify:** a wrong code/password/username all give the same generic failure; 5 bad
+attempts on the username → locked out; the session cookie shows `HttpOnly; Secure; SameSite=Lax;
+Path=/vault` in dev tools; `curl -sI https://<ip>/vault` → `307` to `/vault/login` when logged out;
+`/vault/api/<anything>` without a session → `401`; `/vault/api/health` → `200` without a session.
 
 ---
 
@@ -161,7 +187,44 @@ already-public image.
 
 ---
 
-## 5. Application-level limits  ⬜ (Phase 7 — `/ask`)
+## 5. Browse & file serving — path traversal  ✅ (Phase 4)
+
+**Why:** Browse turns **untrusted URL path segments into filesystem reads** over the coursework
+on `/data`. The classic attacks are **path traversal** (`/vault/browse/../../etc/passwd` → read
+anything the process can) and **symlink escape** (a link inside `/data` pointing at `/etc`). One
+sloppy `path.join` and the whole disk is downloadable.
+
+**What's built** — every path funnels through a single guard, `safeResolve()`
+(`app/src/lib/browse/data-dir.ts`); nothing else touches the data dir:
+- **Two-stage defense.**
+  1. **Lexical** (pure string math, no FS): reject any segment that is `..`, contains a separator
+     (`/` or `\`), a `:` (Windows drive / alternate data stream), a NUL byte, or is empty; join the
+     rest under `DATA_DIR`; then confirm the joined path is still **inside** `DATA_DIR`.
+  2. **`realpath`**: canonicalize the resolved path and **re-check containment**, so a symlink that
+     is lexically clean but points outside `/data` is caught on the *real* target, not the link name.
+- **Least privilege on the mount:** `/data` is mounted **read-only** in the container
+  (`/data:/data:ro`), and the image is code-only — the documents never live in git or the image.
+- **Only regular files are served.** Listings hide dotfiles and anything that isn't a plain file or
+  folder (symlinks, devices); `resolveFile` refuses directories and non-regular files.
+- **Decode-before-guard.** Next 16 hands **page** catch-all params **URL-encoded**, so the browse
+  page `decodeURIComponent`s each segment **and then** runs the guard — an encoded `..` (`%2e%2e`)
+  still decodes to `..` and is rejected. (A raw `..` in the URL is normalized away by Next into a
+  redirect before it ever reaches the page.)
+- **Serving headers:** `Content-Disposition` inline for PDFs/images/text, attachment for Office
+  files (with an RFC 5987 `filename*` for names with spaces/unicode); `Cache-Control: private,
+  no-store` so private materials never sit in a shared cache. The file route is under `/api/*`, so
+  the auth gate (§1) protects it too.
+
+**How to verify:**
+- `curl` an authenticated `GET /vault/api/files/../../etc/passwd` (and `%2e%2e` variants) → `404`,
+  never file contents.
+- A symlink planted inside `/data` pointing outside it → `404`.
+- Unit tests exercise traversal/malformed segments and a real symlink-escape (NTFS junction on
+  Windows, symlink on Linux) — see `data-dir.test.ts`.
+
+---
+
+## 6. Application-level limits  ⬜ (Phase 7 — `/ask`)
 
 **Why:** Protects both the data and the Gemini bill if the URL is discovered.
 
@@ -169,7 +232,7 @@ already-public image.
 
 ---
 
-## 6. LLM hardening  ⬜ (Phase 8)
+## 7. LLM hardening  ⬜ (Phase 8)
 
 **Why:** Keep the model on-task and limit prompt-injection blast radius (mitigated, not
 eliminated — acceptable for one user over their own documents).
