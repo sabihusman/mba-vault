@@ -1,6 +1,11 @@
+import { LogoutButton } from "./logout-button";
+
 export default function Home() {
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-6 px-6 py-16 text-center">
+      <div className="absolute right-4 top-4">
+        <LogoutButton />
+      </div>
       <div className="flex flex-col items-center gap-3">
         <span className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-900 text-2xl font-bold text-white dark:bg-slate-800">
           MV

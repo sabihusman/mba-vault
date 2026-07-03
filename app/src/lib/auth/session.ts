@@ -14,7 +14,9 @@ export interface SessionData {
 }
 
 export const SESSION_COOKIE = "mba_vault_session";
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
+// Exported so the proxy gate's unsealData() re-checks expiry against the SAME
+// ttl the cookie was sealed with — a mismatch would reject valid sessions.
+export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
 function sessionOptions(): SessionOptions {
   return {
