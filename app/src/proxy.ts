@@ -42,6 +42,9 @@ export const config = {
     // which would otherwise leave the home page ungated. Verified with a runtime
     // probe (GET /vault returned 200 until this was added).
     "/",
-    "/((?!login|api/login|api/logout|_next/static|_next/image|manifest.webmanifest|sw.js|offline|favicon.ico|icon-.*\\.png).*)",
+    // api/health is a public liveness probe (docker-compose healthcheck + deploy
+    // smoke test hit it unauthenticated) — it must NOT be gated, or every deploy
+    // fails its health check with 401. It returns only { ok: true }.
+    "/((?!login|api/login|api/logout|api/health|_next/static|_next/image|manifest.webmanifest|sw.js|offline|favicon.ico|icon-.*\\.png).*)",
   ],
 };
