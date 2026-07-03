@@ -1,11 +1,20 @@
 import { randomBytes } from "node:crypto";
+import { resolve } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
-// A fresh session secret per test run, generated (not hard-coded) so no secret
-// literal lives in the repo. PR4's e2e only renders /login and exercises the
-// gate, so this is the only auth env the app needs to boot. The login-flow tests
-// (PR5) will add generated AUTH_* credentials via a global setup.
-const E2E_SESSION_SECRET = randomBytes(32).toString("base64url");
+// A generated (not hard-coded) session secret so no secret literal lives in the
+// repo. Playwright re-loads this config in every worker process, so we must
+// generate ONCE in the main process and let workers inherit the value via env —
+// otherwise each worker would pick a different secret and seal cookies the app
+// can't unseal. The browse tests read E2E_SESSION_SECRET to mint a valid session.
+const E2E_SESSION_SECRET =
+  process.env.E2E_SESSION_SECRET ?? randomBytes(32).toString("base64url");
+process.env.E2E_SESSION_SECRET = E2E_SESSION_SECRET;
+
+// Point the app at the committed fixture tree instead of the box's /data.
+// Playwright runs this config with cwd = the app workspace, so resolve from there
+// (avoids import.meta, which breaks Playwright's CJS config loader).
+const E2E_DATA_DIR = resolve(process.cwd(), "test-fixtures/data");
 
 /**
  * E2E config. We test on a desktop viewport AND a mobile viewport (Pixel 5) so
@@ -35,9 +44,11 @@ export default defineConfig({
     url: "http://localhost:3000/vault/login",
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
-    // The app needs a session secret to render /login and run the gate.
+    // The app needs a session secret to render /login and run the gate, and a
+    // data dir to serve browse from the fixtures.
     env: {
       SESSION_SECRET: E2E_SESSION_SECRET,
+      DATA_DIR: E2E_DATA_DIR,
     },
   },
 });

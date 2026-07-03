@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { LogoutButton } from "./logout-button";
 
 export default function Home() {
@@ -16,9 +17,12 @@ export default function Home() {
           browse your materials by topic and ask questions with cited sources.
         </p>
       </div>
-      <p className="rounded-full border border-slate-200 px-4 py-1.5 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-        Scaffolding in progress · auth, browse, and Ask coming next
-      </p>
+      <Link
+        href="/browse"
+        className="rounded-full bg-slate-900 px-5 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
+      >
+        Browse materials
+      </Link>
     </main>
   );
 }
