@@ -21,7 +21,13 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
 
-  return NextResponse.redirect(new URL("/login", request.nextUrl));
+  // Clone the NextURL (which tracks basePath) and set the path — a plain
+  // `new URL("/login", ...)` would emit `location: /login`, dropping the /vault
+  // basePath and 404ing. Cloning yields the correct `/vault/login`.
+  const loginUrl = request.nextUrl.clone();
+  loginUrl.pathname = "/login";
+  loginUrl.search = "";
+  return NextResponse.redirect(loginUrl);
 }
 
 export const config = {
