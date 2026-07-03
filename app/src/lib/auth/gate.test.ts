@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { sealData } from "iron-session";
-import { hasValidSession } from "./gate";
+import { hasValidSession, isPublicPath } from "./gate";
 import { SESSION_TTL_SECONDS, type SessionData } from "./session";
 
 const SECRET = "unit-test-session-secret-at-least-32-chars-long";
@@ -49,4 +49,28 @@ describe("hasValidSession", () => {
   // manually — not unit-tested here because it can't be exercised without either
   // backdating the seal or a 7-day wait. The "accepts a valid cookie" case proves
   // the matched-ttl round-trip; the E2E suite (PR5) covers real session lifetime.
+});
+
+describe("isPublicPath", () => {
+  it("allows the login flow, liveness probe, and PWA shell/assets", () => {
+    for (const p of [
+      "/login",
+      "/api/login",
+      "/api/logout",
+      "/api/health",
+      "/offline",
+      "/manifest.webmanifest",
+      "/sw.js",
+      "/icon-192.png",
+      "/icon-512.png",
+    ]) {
+      expect(isPublicPath(p), p).toBe(true);
+    }
+  });
+
+  it("gates the app root and every protected page/api", () => {
+    for (const p of ["/", "/browse", "/ask", "/api/ask", "/api/health/extra", "/loginx"]) {
+      expect(isPublicPath(p), p).toBe(false);
+    }
+  });
 });
