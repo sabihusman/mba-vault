@@ -1,4 +1,11 @@
+import { randomBytes } from "node:crypto";
 import { defineConfig, devices } from "@playwright/test";
+
+// A fresh session secret per test run, generated (not hard-coded) so no secret
+// literal lives in the repo. PR4's e2e only renders /login and exercises the
+// gate, so this is the only auth env the app needs to boot. The login-flow tests
+// (PR5) will add generated AUTH_* credentials via a global setup.
+const E2E_SESSION_SECRET = randomBytes(32).toString("base64url");
 
 /**
  * E2E config. We test on a desktop viewport AND a mobile viewport (Pixel 5) so
@@ -28,16 +35,9 @@ export default defineConfig({
     url: "http://localhost:3000/vault/login",
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
-    // Auth is now required for the app to render. These are TEST-ONLY credentials
-    // (not the real box secrets) so e2e is self-contained locally and in CI. The
-    // password behind AUTH_PASSWORD_HASH is "e2e-test-password"; TOTP_SECRET is a
-    // well-known base32 test vector. The login-flow tests (PR5) build on these.
+    // The app needs a session secret to render /login and run the gate.
     env: {
-      SESSION_SECRET: "e2e-test-session-secret-at-least-32-characters-long",
-      AUTH_USERNAME: "sabih",
-      AUTH_PASSWORD_HASH:
-        "$argon2id$v=19$m=19456,t=2,p=1$+yrPtq1oEPQpq3iql9X58A$TtwyJ0vSqIUn3eoXFJb3aaNsaUNSTd8V0WuFGUb7ZZ8",
-      TOTP_SECRET: "JBSWY3DPEHPK3PXP",
+      SESSION_SECRET: E2E_SESSION_SECRET,
     },
   },
 });
