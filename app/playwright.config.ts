@@ -1,4 +1,11 @@
+import { randomBytes } from "node:crypto";
 import { defineConfig, devices } from "@playwright/test";
+
+// A fresh session secret per test run, generated (not hard-coded) so no secret
+// literal lives in the repo. PR4's e2e only renders /login and exercises the
+// gate, so this is the only auth env the app needs to boot. The login-flow tests
+// (PR5) will add generated AUTH_* credentials via a global setup.
+const E2E_SESSION_SECRET = randomBytes(32).toString("base64url");
 
 /**
  * E2E config. We test on a desktop viewport AND a mobile viewport (Pixel 5) so
@@ -23,9 +30,14 @@ export default defineConfig({
   ],
   webServer: {
     command: "npm run dev",
-    // App is under basePath /vault; root returns 404, so probe the app's real entry.
-    url: "http://localhost:3000/vault",
+    // Probe /vault/login: it returns 200 directly, whereas the gated app root now
+    // 307-redirects to login, which is a noisier readiness signal.
+    url: "http://localhost:3000/vault/login",
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
+    // The app needs a session secret to render /login and run the gate.
+    env: {
+      SESSION_SECRET: E2E_SESSION_SECRET,
+    },
   },
 });
