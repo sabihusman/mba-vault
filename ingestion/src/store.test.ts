@@ -36,7 +36,7 @@ describe("store", () => {
     const vecs = new Float32Array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
     await writeVectors(dir, vecs);
     const back = await readVectors(dir);
-    expect(back.length).toBe(6);
+    expect(back).toHaveLength(6);
     for (let i = 0; i < vecs.length; i++) expect(back[i]!).toBeCloseTo(vecs[i]!, 6);
   });
 
