@@ -10,7 +10,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "ingest:dryrun": "tsx scripts/dry-run.ts"
+    "ingest:dryrun": "tsx scripts/dry-run.ts",
+    "ingest": "tsx scripts/ingest.ts"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",
@@ -19,6 +20,7 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
+    "@google/genai": "^2.10.0",
     "fast-xml-parser": "^5.9.3",
     "jszip": "^3.10.1",
     "mammoth": "^1.12.0",
