@@ -37,6 +37,9 @@ playwright/.cache/
 *.index
 *.vec
 *.embeddings
+# Local ingestion output (chunks.jsonl / vectors.bin / manifest.json)
+.index/
+.index-dryrun/
 
 # OS / editor cruft
 .DS_Store
