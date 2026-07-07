@@ -7,6 +7,7 @@ import { getIndex } from "@/lib/ask/index-store";
 import { createGeminiClient } from "@/lib/ask/gemini";
 import { answerQuestion, MAX_QUESTION_CHARS, type AskDeps, type Turn } from "@/lib/ask/answer";
 import { consumeAsk } from "@/lib/ask/ratelimit";
+import { appendQuestion } from "@/lib/history/store";
 
 export async function POST(request: Request): Promise<Response> {
   const body: unknown = await request.json().catch(() => null);
@@ -37,6 +38,10 @@ export async function POST(request: Request): Promise<Response> {
   if (!apiKey) {
     return Response.json({ error: "Ask is not configured (missing GEMINI_API_KEY)." }, { status: 503 });
   }
+
+  // Record the question for the "pick up where you left off" card. Fire-and-forget:
+  // a write failure (e.g. the /state volume isn't mounted) must never break asking.
+  void appendQuestion(question, new Date()).catch(() => {});
 
   const client = createGeminiClient(apiKey);
   const deps: AskDeps = {
