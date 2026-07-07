@@ -28,7 +28,8 @@ export function contentTypeFor(ext: string): string {
   return CONTENT_TYPES[ext] ?? "application/octet-stream";
 }
 
-export function dispositionFor(ext: string): "inline" | "attachment" {
+export function dispositionFor(ext: string, forceDownload = false): "inline" | "attachment" {
+  if (forceDownload) return "attachment"; // explicit ?download=1 always wins
   return INLINE_EXTS.has(ext) ? "inline" : "attachment";
 }
 

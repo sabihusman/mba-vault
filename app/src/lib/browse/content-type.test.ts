@@ -20,6 +20,15 @@ describe("dispositionFor", () => {
     expect(dispositionFor("docx")).toBe("attachment");
     expect(dispositionFor("zzz")).toBe("attachment");
   });
+
+  it("forces attachment for otherwise-inline types when download is requested", () => {
+    expect(dispositionFor("pdf", true)).toBe("attachment");
+    expect(dispositionFor("png", true)).toBe("attachment");
+    // Office types are attachment either way.
+    expect(dispositionFor("docx", true)).toBe("attachment");
+    // Explicitly false keeps the inline default.
+    expect(dispositionFor("pdf", false)).toBe("inline");
+  });
 });
 
 describe("contentDisposition", () => {
