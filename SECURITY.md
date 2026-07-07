@@ -224,21 +224,72 @@ sloppy `path.join` and the whole disk is downloadable.
 
 ---
 
-## 6. Application-level limits  ⬜ (Phase 7 — `/ask`)
+## 6. Application-level limits — `/ask`  ✅ (Phase A — live in prod 2026-07-07)
 
-**Why:** Protects both the data and the Gemini bill if the URL is discovered.
+**Why:** `/ask` is the one endpoint that spends money (Gemini calls) and reads the whole
+vector index. If the URL is discovered, both the data and the Gemini bill need a backstop
+beyond auth alone.
 
-**Plan:** rate-limit the `/ask` endpoint; cap input length; Gemini key stays server-side.
+**What's built** (`app/src/app/api/ask/route.ts`):
+- **Auth-gated like everything else.** `/api/ask` sits under `/api/*` and is **not** in
+  `isPublicPath()`, so the §1 proxy gate returns **`401`** to any unauthenticated request —
+  the Gemini call is never reached without a valid session.
+- **Rate-limited** (`app/src/lib/ask/ratelimit.ts`): `rate-limiter-flexible` in-memory,
+  **30 questions/hour per IP**. The client IP comes from the same nginx-aware `clientIp()`
+  helper as login (§1: `X-Real-IP` → leftmost `X-Forwarded-For` → `"unknown"`). Over the
+  limit → **`429`** with a `Retry-After` header. Auth already caps this to one user, so this
+  is a **cost backstop** (a stuck client, a loop), not an anti-abuse wall.
+- **Input length capped.** The question must be a non-empty string (**`400`** otherwise) and
+  is capped at **`MAX_QUESTION_CHARS = 2000`** (**`400`** if longer) — checked before any
+  embedding or generation spend.
+- **Gemini key is server-side only.** The route reads `process.env.GEMINI_API_KEY` (loaded
+  from the box `.env`, supplied to CI as a GitHub Actions secret — §0) inside the server
+  route handler; it is **never** sent to the browser or embedded in any client bundle. If the
+  key is absent the route returns **`503`** ("Ask is not configured") rather than failing obscurely.
+
+**How to verify:**
+- `curl -k -X POST https://<ip>/vault/api/ask -d '{"question":"hi"}'` **without a session → `401`**.
+- Authenticated: an empty/missing `question` → `400`; a question over 2000 chars → `400`.
+- The 31st authenticated question within an hour from one IP → `429` with `Retry-After`.
+- `grep -rn GEMINI_API_KEY app/src` shows it read **only** in the server route; searching the
+  built client bundle (`app/.next`) for the key value returns nothing, and it appears in no
+  network response in dev tools.
 
 ---
 
-## 7. LLM hardening  ⬜ (Phase 8)
+## 7. LLM hardening  ✅ (Phase A — live in prod 2026-07-07)
 
-**Why:** Keep the model on-task and limit prompt-injection blast radius (mitigated, not
-eliminated — acceptable for one user over their own documents).
+**Why:** Keep the model on-task and limit prompt-injection blast radius. This is **mitigated,
+not eliminated** — acceptable for one user asking over their **own** documents, where hostile
+instructions embedded in a source chunk can only ever mislead that same user.
 
-**Plan:** the model gets **no tools/actions**; a **system instruction** fixes its role
-("answer only from the provided coursework; if it's not covered, say so"); input-length caps.
+**What's built** (`app/src/lib/ask/answer.ts`, `gemini.ts`):
+- **No tools, no actions.** Generation calls `generateContentStream` with only a
+  `systemInstruction` and the prompt text — **no function/tool declarations are configured**,
+  so the model can do nothing but emit answer text. There is no path from a model output to a
+  filesystem read, a network call, or any side effect.
+- **Fixed role via system instruction.** `SYSTEM_INSTRUCTION` pins the assistant to answer
+  **only from the numbered source excerpts** provided (the user's retrieved coursework), cite
+  them inline as `[n]`, and **decline honestly** ("I don't have that in the coursework") when
+  the excerpts don't cover the question — explicitly **no outside knowledge, no guessing**.
+- **Grounded in the user's own corpus.** The prompt is assembled from the top-K (`TOP_K = 8`)
+  retrieved chunks of the owner's documents; the model sees nothing but those excerpts, the
+  (capped) conversation so far, and the question.
+- **Input length capped** at 2000 chars (§6), applied before generation.
+- **Follow-up context capped server-side.** Prior turns sent for context are trimmed by
+  `capHistory()` to the **last 3 turns**, each prior answer truncated to **800 chars**
+  (`MAX_HISTORY_TURNS = 3`, `MAX_HISTORY_ANSWER_CHARS = 800`). This is **authoritative on the
+  server** (the client mirrors it, but `route.ts` re-applies the cap and drops any malformed
+  history entry), so a crafted client can't grow the prompt — and the token bill — without bound.
+
+**How to verify:**
+- Ask something outside the coursework (e.g. "What's the capital of France?") → the model
+  declines rather than answering from general knowledge.
+- The Gemini request carries no `tools`/`functionDeclarations` (see `gemini.ts` — config is
+  `systemInstruction` only).
+- Unit tests cover the caps and prompt assembly (`answer.test.ts`): the 3-turn/800-char
+  `capHistory`, the retrieval-query concat, and that history renders under a "Conversation
+  so far" block with a "Follow-up question" label.
 
 ---
 
