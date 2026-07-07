@@ -1,8 +1,53 @@
 @import "tailwindcss";
 
+/* Dark mode is class-based (.dark on <html>) rather than Tailwind v4's default
+   prefers-color-scheme. A no-flash inline script in layout.tsx sets the class
+   from the OS preference on first paint; the manual toggle ships with the header
+   later. Existing pages keep their `dark:` utilities working under this variant. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Study Desk palette — light (design handoff §1). */
+  --bg: #faf7f2;
+  --card: #ffffff;
+  --hdr: #fdfbf7;
+  --bd: #e9e2d6;
+  --bd2: #f1ebe0;
+  --tx: #2b2620;
+  --tx2: #6b6154;
+  --mut: #a89e8e;
+  --acc: #b0752f;
+  --accbg: #fdf6ea;
+  --accbd: #ecd9b4;
+  --qbub: #efe7d8;
+  --ok: #4d8a54;
+  --warn: #d9a13c;
+  --err: #b3573f;
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+
+  /* Study Desk palette — dark (design handoff §1). */
+  --bg: #1e1b17;
+  --card: #282420;
+  --hdr: #191612;
+  --bd: #38322a;
+  --bd2: #332e27;
+  --tx: #e8e2d6;
+  --tx2: #c0b7a8;
+  --mut: #8a7f6e;
+  --acc: #cf9a55;
+  --accbg: #332b1e;
+  --accbd: #524731;
+  --qbub: #3a332a;
+  --ok: #6faf74;
+  --warn: #d9a13c;
+  --err: #c56a52;
 }
 
 @theme inline {
@@ -10,13 +55,45 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Study Desk tokens exposed as Tailwind utilities (bg-bg, text-tx, border-bd…). */
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-hdr: var(--hdr);
+  --color-bd: var(--bd);
+  --color-bd2: var(--bd2);
+  --color-tx: var(--tx);
+  --color-tx2: var(--tx2);
+  --color-mut: var(--mut);
+  --color-acc: var(--acc);
+  --color-accbg: var(--accbg);
+  --color-accbd: var(--accbd);
+  --color-qbub: var(--qbub);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-err: var(--err);
+
+  --font-serif: var(--font-source-serif), serif;
+  --font-ui: var(--font-public-sans), sans-serif;
+
+  /* 860px breakpoint used throughout the handoff (`desk:` prefix). */
+  --breakpoint-desk: 860px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Shimmer for the Ask loading state (design §4 — spinner + 3 shimmer bars). */
+@keyframes mv-shimmer {
+  0% { background-position: -180% 0; }
+  100% { background-position: 180% 0; }
+}
+.mv-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bd2) 25%,
+    var(--bd) 50%,
+    var(--bd2) 75%
+  );
+  background-size: 200% 100%;
+  animation: mv-shimmer 1.5s ease-in-out infinite;
 }
 
 body {
