@@ -17,12 +17,20 @@ export default function Home() {
           browse your materials by topic and ask questions with cited sources.
         </p>
       </div>
-      <Link
-        href="/browse"
-        className="rounded-full bg-slate-900 px-5 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
-      >
-        Browse materials
-      </Link>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <Link
+          href="/browse"
+          className="rounded-full bg-slate-900 px-5 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
+        >
+          Browse materials
+        </Link>
+        <Link
+          href="/ask"
+          className="rounded-full border border-slate-300 px-5 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+        >
+          Ask a question
+        </Link>
+      </div>
     </main>
   );
 }
