@@ -12,6 +12,10 @@
 
 # testing
 /coverage
+/test-results
+/playwright-report
+# seeded at runtime by the resume-card e2e (STATE_DIR)
+/test-fixtures/state
 
 # next.js
 /.next/

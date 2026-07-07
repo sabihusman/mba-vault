@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { listDirectory } from "@/lib/browse/catalog";
 import { BrowseList } from "./browse-list";
+import { ResumeCard } from "./resume-card";
 
 export default async function BrowsePage({
   params,
@@ -26,6 +27,12 @@ export default async function BrowsePage({
   return (
     <main className="mx-auto w-full max-w-[1020px] px-5 py-6">
       <Breadcrumbs segments={segments} />
+      {/* Resume card only at the browse root, above the course list. */}
+      {segments.length === 0 && (
+        <div className="mb-4">
+          <ResumeCard />
+        </div>
+      )}
       <BrowseList segments={segments} entries={listing.entries} />
     </main>
   );

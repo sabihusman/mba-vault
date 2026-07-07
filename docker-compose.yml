@@ -13,6 +13,9 @@ services:
       - .env
     volumes:
       - /data:/data:ro
+      # Small writable, persistent volume for app-generated state (Ask history for
+      # the "pick up where you left off" card). Survives redeploys; /data stays ro.
+      - mba_vault_state:/state
     healthcheck:
       test:
         - CMD
@@ -23,3 +26,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+volumes:
+  # Named volume for writable app state; Docker persists it across `up -d` redeploys.
+  mba_vault_state:

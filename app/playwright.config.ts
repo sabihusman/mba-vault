@@ -16,6 +16,12 @@ process.env.E2E_SESSION_SECRET = E2E_SESSION_SECRET;
 // (avoids import.meta, which breaks Playwright's CJS config loader).
 const E2E_DATA_DIR = resolve(process.cwd(), "test-fixtures/data");
 
+// Writable state dir for the Ask-history / resume-card tests. Shared with the test
+// runner via env (like the session secret) so a spec can seed history.jsonl at the
+// same path the app reads from. Gitignored, not committed.
+const E2E_STATE_DIR = resolve(process.cwd(), "test-fixtures/state");
+process.env.STATE_DIR = E2E_STATE_DIR;
+
 /**
  * E2E config. We test on a desktop viewport AND a mobile viewport (Pixel 5) so
  * responsiveness is covered from day one, as required by the architecture.
@@ -49,6 +55,7 @@ export default defineConfig({
     env: {
       SESSION_SECRET: E2E_SESSION_SECRET,
       DATA_DIR: E2E_DATA_DIR,
+      STATE_DIR: E2E_STATE_DIR,
     },
   },
 });
