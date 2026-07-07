@@ -48,16 +48,30 @@ export function BrowseList({ segments, entries }: { segments: string[]; entries:
                   <span className="flex-1">{entry.name}</span>
                 </Link>
               ) : (
-                <a
-                  href={`${FILE_BASE}${prefix}/${encodeURIComponent(entry.name)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-2 hover:underline"
-                >
-                  <span aria-hidden>📄</span>
-                  <span className="flex-1">{entry.name}</span>
-                  <span className="shrink-0 text-xs text-neutral-500">{formatMeta(entry)}</span>
-                </a>
+                <div className="flex items-center gap-2">
+                  {/* Open: inline in the tab for viewable types (PDF/image/text),
+                      download for the rest (Office) — the server decides. */}
+                  <a
+                    href={`${FILE_BASE}${prefix}/${encodeURIComponent(entry.name)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex flex-1 items-center gap-2 hover:underline"
+                  >
+                    <span aria-hidden>📄</span>
+                    <span className="flex-1">{entry.name}</span>
+                    <span className="shrink-0 text-xs text-neutral-500">{formatMeta(entry)}</span>
+                  </a>
+                  {/* Download: ?download=1 forces attachment even for inline types. */}
+                  <a
+                    href={`${FILE_BASE}${prefix}/${encodeURIComponent(entry.name)}?download=1`}
+                    download={entry.name}
+                    aria-label={`Download ${entry.name}`}
+                    title="Download"
+                    className="shrink-0 rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+                  >
+                    <span aria-hidden>⬇</span>
+                  </a>
+                </div>
               )}
             </li>
           ))}

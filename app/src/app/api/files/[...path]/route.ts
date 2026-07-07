@@ -8,7 +8,7 @@ import { resolveFile } from "@/lib/browse/catalog";
 import { contentTypeFor, dispositionFor, contentDisposition } from "@/lib/browse/content-type";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   ctx: { params: Promise<{ path: string[] }> },
 ): Promise<Response> {
   const { path } = await ctx.params;
@@ -17,7 +17,11 @@ export async function GET(
     return new Response("Not found", { status: 404 });
   }
 
-  const kind = dispositionFor(file.ext);
+  // ?download=1 forces a download even for types we'd otherwise render inline
+  // (PDFs, images, text), so the UI can offer an explicit "Download" alongside
+  // opening a file in the tab.
+  const forceDownload = new URL(request.url).searchParams.get("download") === "1";
+  const kind = dispositionFor(file.ext, forceDownload);
   const body = Readable.toWeb(createReadStream(file.absPath)) as unknown as ReadableStream<Uint8Array>;
 
   return new Response(body, {
