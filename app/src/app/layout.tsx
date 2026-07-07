@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Source_Serif_4, Public_Sans } from "next/font/google";
 import "./globals.css";
 import { RegisterSW } from "./register-sw";
+import { AppShell } from "./app-shell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -70,8 +71,8 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
-      <body className="flex min-h-full flex-col bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-        {children}
+      <body className="flex min-h-full flex-col bg-bg font-ui text-tx">
+        <AppShell>{children}</AppShell>
         <RegisterSW />
       </body>
     </html>
