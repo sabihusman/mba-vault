@@ -61,6 +61,27 @@ test("renders the shared app shell on an authed page", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Toggle theme" })).toBeVisible();
 });
 
+test("health pill renders and /api/status returns an aggregate when authed", async ({ page }) => {
+  await page.goto("/vault/browse");
+  await expect(page.getByRole("button", { name: /System health/ })).toBeVisible();
+
+  const res = await page.request.get("/vault/api/status");
+  expect(res.status()).toBe(200);
+  const body = (await res.json()) as { overall: string; components: unknown[] };
+  expect(["ok", "warn", "err", "unknown"]).toContain(body.overall);
+  expect(body.components).toHaveLength(5);
+});
+
+test("/api/status is gated without a session", async ({ browser }) => {
+  const fresh = await browser.newContext(); // no cookie
+  try {
+    const res = await fresh.request.get("/vault/api/status");
+    expect(res.status()).toBe(401);
+  } finally {
+    await fresh.close();
+  }
+});
+
 test("theme toggle flips .dark and persists to localStorage", async ({ page }) => {
   await page.goto("/vault/browse");
   await page.getByRole("button", { name: "Toggle theme" }).click();

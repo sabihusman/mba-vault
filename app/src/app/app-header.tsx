@@ -8,6 +8,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ThemeToggle } from "./theme-toggle";
 import { LogoutButton } from "./logout-button";
+import { HealthStatus } from "./health-status";
 
 const TABS = [
   { href: "/browse", label: "Browse" },
@@ -45,6 +46,7 @@ export function AppHeader() {
         </nav>
 
         <div className="flex-1" />
+        <HealthStatus />
         <ThemeToggle />
         <LogoutButton />
       </div>
