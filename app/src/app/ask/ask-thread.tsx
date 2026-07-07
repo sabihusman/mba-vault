@@ -1,10 +1,10 @@
 "use client";
 
-// The Ask thread: one question in, a streamed grounded answer out. Owns the input,
-// the streaming fetch to /vault/api/ask (NDJSON), and every state from the design
-// handoff §4 — empty, loading, answer, not-covered, failure. Recent questions are
-// kept in localStorage as a lightweight stand-in; true server-side history is the
-// separate "pick up where you left off" feature.
+// The Ask thread: ask a question, get a streamed grounded answer, then ask
+// follow-ups in the same thread without resetting. Prior turns stay on screen and
+// the last few are sent back as context so references like "what about X?" resolve
+// (the server caps how much history it actually uses). Every state from the design
+// handoff §4 lives here — empty, loading, answer, not-covered, failure.
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   splitNdjson,
@@ -19,6 +19,8 @@ const ASK_URL = "/vault/api/ask";
 const FILE_BASE = "/vault/api/files";
 const RECENT_KEY = "mv-recent-questions";
 const MAX_RECENT = 6;
+// Mirror of the server's MAX_HISTORY_TURNS: don't send more than we know it uses.
+const MAX_CLIENT_HISTORY = 3;
 
 const SUGGESTIONS = [
   "What is customer acquisition cost and how is it calculated?",
@@ -26,18 +28,30 @@ const SUGGESTIONS = [
   "What makes a good product roadmap?",
 ];
 
-type Status = "idle" | "loading" | "streaming" | "done" | "error";
+type TurnStatus = "loading" | "streaming" | "done" | "error";
+
+interface Turn {
+  id: number;
+  question: string;
+  citations: Citation[];
+  answer: string;
+  status: TurnStatus;
+  errorMsg: string;
+}
 
 export function AskThread({ initialQuestion }: { initialQuestion: string }) {
   const [input, setInput] = useState(initialQuestion);
-  const [asked, setAsked] = useState(""); // the question currently being answered
-  const [citations, setCitations] = useState<Citation[]>([]);
-  const [answer, setAnswer] = useState("");
-  const [status, setStatus] = useState<Status>("idle");
-  const [errorMsg, setErrorMsg] = useState("");
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [recent, setRecent] = useState<string[]>([]);
 
   const abortRef = useRef<AbortController | null>(null);
+  const nextIdRef = useRef(0);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  // Snapshot of turns for building history at ask-time without stale closures.
+  const turnsRef = useRef<Turn[]>(turns);
+  turnsRef.current = turns;
+
+  const busy = turns.some((t) => t.status === "loading" || t.status === "streaming");
 
   // Load recent questions on the client only (avoids an SSR hydration mismatch —
   // the server has no localStorage, so the list must populate after mount).
@@ -63,34 +77,29 @@ export function AskThread({ initialQuestion }: { initialQuestion: string }) {
     });
   }, []);
 
-  const ask = useCallback(
-    async (question: string) => {
-      const trimmed = question.trim();
-      if (!trimmed) return;
+  const updateTurn = useCallback((id: number, patch: (t: Turn) => Partial<Turn>) => {
+    setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch(t) } : t)));
+  }, []);
 
+  // Stream one turn to completion, updating it in place by id.
+  const runTurn = useCallback(
+    async (id: number, question: string, history: { question: string; answer: string }[]) => {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
-
-      setAsked(trimmed);
-      setCitations([]);
-      setAnswer("");
-      setErrorMsg("");
-      setStatus("loading");
-      rememberQuestion(trimmed);
+      updateTurn(id, () => ({ status: "loading", answer: "", citations: [], errorMsg: "" }));
 
       try {
         const res = await fetch(ASK_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: trimmed }),
+          body: JSON.stringify({ question, history }),
           signal: controller.signal,
         });
 
         if (!res.ok || !res.body) {
           const message = await readErrorMessage(res);
-          setErrorMsg(message);
-          setStatus("error");
+          updateTurn(id, () => ({ status: "error", errorMsg: message }));
           return;
         }
 
@@ -108,25 +117,60 @@ export function AskThread({ initialQuestion }: { initialQuestion: string }) {
             const event = parseEvent(line);
             if (!event) continue;
             if (event.type === "citations") {
-              setCitations(event.citations);
+              updateTurn(id, () => ({ citations: event.citations }));
             } else if (event.type === "text") {
-              setStatus("streaming");
-              setAnswer((prev) => prev + event.text);
+              updateTurn(id, (t) => ({ status: "streaming", answer: t.answer + event.text }));
             } else if (event.type === "error") {
-              setErrorMsg("Couldn’t get an answer. Please try again.");
-              setStatus("error");
+              updateTurn(id, () => ({ status: "error", errorMsg: "Couldn’t get an answer. Please try again." }));
               return;
             }
           }
         }
-        setStatus("done");
+        updateTurn(id, () => ({ status: "done" }));
       } catch {
         if (controller.signal.aborted) return; // superseded by a newer question
-        setErrorMsg("Couldn’t reach the vault. Check your connection and try again.");
-        setStatus("error");
+        updateTurn(id, () => ({
+          status: "error",
+          errorMsg: "Couldn’t reach the vault. Check your connection and try again.",
+        }));
       }
     },
-    [rememberQuestion],
+    [updateTurn],
+  );
+
+  // Prior completed turns (before `beforeId`, or all) → capped follow-up context.
+  const buildHistory = useCallback((beforeId?: number) => {
+    const all = turnsRef.current;
+    const upto = beforeId === undefined ? all : all.slice(0, all.findIndex((t) => t.id === beforeId));
+    return upto
+      .filter((t) => t.status === "done")
+      .slice(-MAX_CLIENT_HISTORY)
+      .map((t) => ({ question: t.question, answer: t.answer }));
+  }, []);
+
+  const ask = useCallback(
+    (question: string) => {
+      const trimmed = question.trim();
+      if (!trimmed) return;
+      const history = buildHistory();
+      const id = nextIdRef.current++;
+      setTurns((prev) => [
+        ...prev,
+        { id, question: trimmed, citations: [], answer: "", status: "loading", errorMsg: "" },
+      ]);
+      rememberQuestion(trimmed);
+      setInput("");
+      void runTurn(id, trimmed, history);
+    },
+    [buildHistory, rememberQuestion, runTurn],
+  );
+
+  const retry = useCallback(
+    (id: number) => {
+      const turn = turnsRef.current.find((t) => t.id === id);
+      if (turn) void runTurn(id, turn.question, buildHistory(id));
+    },
+    [buildHistory, runTurn],
   );
 
   // Auto-ask a query handed in from Browse (?q=…), once.
@@ -134,50 +178,59 @@ export function AskThread({ initialQuestion }: { initialQuestion: string }) {
   useEffect(() => {
     if (initialQuestion && !didAutoAsk.current) {
       didAutoAsk.current = true;
-      void ask(initialQuestion);
+      ask(initialQuestion);
     }
   }, [initialQuestion, ask]);
+
+  // Keep the newest turn + input in view as the thread grows.
+  useEffect(() => {
+    if (turns.length > 0) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [turns.length]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    void ask(input);
+    ask(input);
   };
 
-  const showEmpty = status === "idle";
-  const notCovered = status === "done" && isNotCovered(answer);
+  const empty = turns.length === 0;
 
   return (
     <div className="flex flex-col gap-6">
-      <AskInput value={input} onChange={setInput} onSubmit={onSubmit} busy={status === "loading" || status === "streaming"} />
+      {empty && <AskInput value={input} onChange={setInput} onSubmit={onSubmit} busy={busy} />}
 
-      {showEmpty && (
-        <EmptyState
-          recent={recent}
-          onPick={(q) => {
-            setInput(q);
-            void ask(q);
-          }}
-        />
-      )}
-
-      {!showEmpty && (
-        <section className="flex flex-col gap-4" aria-live="polite">
-          <QuestionBubble text={asked} />
-
-          {status === "loading" && <LoadingCard />}
-
-          {(status === "streaming" || status === "done") && !notCovered && (
-            <AnswerCard text={answer} citations={citations} streaming={status === "streaming"} />
-          )}
-
-          {notCovered && <NotCoveredCard />}
-
-          {status === "error" && <ErrorCard message={errorMsg} onRetry={() => void ask(asked)} />}
-        </section>
+      {empty ? (
+        <EmptyState recent={recent} onPick={ask} />
+      ) : (
+        <>
+          <div className="flex flex-col gap-6">
+            {turns.map((turn) => (
+              <TurnView key={turn.id} turn={turn} onRetry={() => retry(turn.id)} />
+            ))}
+          </div>
+          <AskInput value={input} onChange={setInput} onSubmit={onSubmit} busy={busy} />
+          <div ref={bottomRef} />
+        </>
       )}
     </div>
+  );
+}
+
+/* ---------- turn ---------- */
+
+function TurnView({ turn, onRetry }: { turn: Turn; onRetry: () => void }) {
+  const notCovered = turn.status === "done" && isNotCovered(turn.answer);
+  return (
+    <section className="flex flex-col gap-4" aria-live="polite">
+      <QuestionBubble text={turn.question} />
+      {turn.status === "loading" && <LoadingCard />}
+      {(turn.status === "streaming" || turn.status === "done") && !notCovered && (
+        <AnswerCard text={turn.answer} citations={turn.citations} streaming={turn.status === "streaming"} />
+      )}
+      {notCovered && <NotCoveredCard />}
+      {turn.status === "error" && <ErrorCard message={turn.errorMsg} onRetry={onRetry} />}
+    </section>
   );
 }
 
@@ -202,7 +255,7 @@ function AskInput({
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="Ask about your coursework…"
+          placeholder="Ask a follow-up…"
           aria-label="Ask a question"
           className="flex-1 bg-transparent text-[14px] text-tx outline-none placeholder:text-mut"
         />

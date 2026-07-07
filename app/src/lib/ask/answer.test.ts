@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { answerQuestion, buildPrompt, sourceLabel, type AskDeps, type AskEvent } from "./answer";
+import {
+  answerQuestion,
+  buildPrompt,
+  sourceLabel,
+  capHistory,
+  retrievalQuery,
+  MAX_HISTORY_TURNS,
+  MAX_HISTORY_ANSWER_CHARS,
+  type AskDeps,
+  type AskEvent,
+  type Turn,
+} from "./answer";
 import type { ChunkMeta, LoadedIndex } from "./index-store";
 
 function chunk(id: string, over: Partial<ChunkMeta> = {}): ChunkMeta {
@@ -31,7 +42,7 @@ describe("answerQuestion", () => {
     };
 
     const events: AskEvent[] = [];
-    for await (const event of answerQuestion(deps, "What is X?", 2)) events.push(event);
+    for await (const event of answerQuestion(deps, "What is X?", [], 2)) events.push(event);
 
     const first = events[0];
     expect(first.type).toBe("citations");
@@ -61,5 +72,47 @@ describe("buildPrompt / sourceLabel", () => {
   it("omits the location for file-level (DOCX) sources", () => {
     expect(sourceLabel({ course: "C", file: "C/paper.docx", loc: { kind: "file" } })).toBe("C / paper.docx");
     expect(sourceLabel({ course: "C", file: "C/r.pdf", loc: { kind: "page", index: 3 } })).toBe("C / r.pdf (p. 3)");
+  });
+
+  it("adds a conversation block and 'Follow-up question' label when history is present", () => {
+    const prompt = buildPrompt(
+      [{ course: "C", file: "C/a.pdf", loc: { kind: "page", index: 1 }, text: "hi" }],
+      "what about pricing?",
+      [{ question: "what is a business model?", answer: "It is how a firm creates value [1]." }],
+    );
+    expect(prompt).toContain("Conversation so far:");
+    expect(prompt).toContain("Q: what is a business model?");
+    expect(prompt).toContain("A: It is how a firm creates value [1].");
+    expect(prompt).toContain("Follow-up question: what about pricing?");
+    expect(prompt).not.toContain("\nQuestion: "); // first-turn label not used
+  });
+});
+
+describe("capHistory", () => {
+  it("keeps only the last MAX_HISTORY_TURNS turns", () => {
+    const many: Turn[] = Array.from({ length: 5 }, (_, i) => ({ question: `q${i}`, answer: `a${i}` }));
+    const capped = capHistory(many);
+    expect(capped).toHaveLength(MAX_HISTORY_TURNS);
+    expect(capped[0].question).toBe("q2"); // dropped q0, q1
+    expect(capped.at(-1)?.question).toBe("q4");
+  });
+
+  it("truncates a long prior answer", () => {
+    const long = "x".repeat(MAX_HISTORY_ANSWER_CHARS + 500);
+    const [turn] = capHistory([{ question: "q", answer: long }]);
+    expect(turn.answer.length).toBe(MAX_HISTORY_ANSWER_CHARS + 1); // +1 for the ellipsis
+    expect(turn.answer.endsWith("…")).toBe(true);
+  });
+});
+
+describe("retrievalQuery", () => {
+  it("prepends the most recent prior question to anchor a follow-up", () => {
+    expect(retrievalQuery("what about it?", [{ question: "explain CAC", answer: "…" }])).toBe(
+      "explain CAC what about it?",
+    );
+  });
+
+  it("returns the question unchanged with no history", () => {
+    expect(retrievalQuery("explain CAC", [])).toBe("explain CAC");
   });
 });

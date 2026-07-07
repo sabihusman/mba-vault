@@ -5,7 +5,7 @@
 import { clientIp } from "@/lib/auth/request-ip";
 import { getIndex } from "@/lib/ask/index-store";
 import { createGeminiClient } from "@/lib/ask/gemini";
-import { answerQuestion, MAX_QUESTION_CHARS, type AskDeps } from "@/lib/ask/answer";
+import { answerQuestion, MAX_QUESTION_CHARS, type AskDeps, type Turn } from "@/lib/ask/answer";
 import { consumeAsk } from "@/lib/ask/ratelimit";
 
 export async function POST(request: Request): Promise<Response> {
@@ -14,6 +14,10 @@ export async function POST(request: Request): Promise<Response> {
   if (question === null) {
     return Response.json({ error: "A non-empty question is required." }, { status: 400 });
   }
+  // Prior turns for follow-up context. Best-effort: malformed entries are dropped
+  // rather than rejected, and answerQuestion caps length again — so the client
+  // can't blow up token cost by sending a huge thread.
+  const history = readHistory(body);
   if (question.length > MAX_QUESTION_CHARS) {
     return Response.json(
       { error: `Question too long (max ${MAX_QUESTION_CHARS} characters).` },
@@ -45,7 +49,7 @@ export async function POST(request: Request): Promise<Response> {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        for await (const event of answerQuestion(deps, question)) {
+        for await (const event of answerQuestion(deps, question, history)) {
           controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
         }
       } catch (err) {
@@ -69,4 +73,22 @@ function readQuestion(body: unknown): string | null {
   if (typeof question !== "string") return null;
   const trimmed = question.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+/** Extract prior {question, answer} turns, skipping anything malformed. The
+ *  per-turn / length caps are re-applied in answerQuestion (capHistory). */
+function readHistory(body: unknown): Turn[] {
+  if (typeof body !== "object" || body === null) return [];
+  const raw = (body as Record<string, unknown>).history;
+  if (!Array.isArray(raw)) return [];
+  const turns: Turn[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { question, answer } = entry as Record<string, unknown>;
+    if (typeof question !== "string" || typeof answer !== "string") continue;
+    const q = question.trim();
+    const a = answer.trim();
+    if (q.length > 0 && a.length > 0) turns.push({ question: q, answer: a });
+  }
+  return turns;
 }
