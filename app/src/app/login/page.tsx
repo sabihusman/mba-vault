@@ -14,8 +14,8 @@ export default async function LoginPage() {
   return (
     <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-6 p-6">
       <div>
-        <h1 className="text-xl font-semibold">MBA-Vault</h1>
-        <p className="text-sm text-neutral-500">Sign in to continue.</p>
+        <h1 className="font-serif text-[27px] font-bold tracking-tight text-tx">MBA-Vault</h1>
+        <p className="text-sm text-tx2">Sign in to continue.</p>
       </div>
       <LoginForm />
     </main>

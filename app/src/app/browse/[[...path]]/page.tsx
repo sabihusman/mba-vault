@@ -24,7 +24,7 @@ export default async function BrowsePage({
   if (listing === null) notFound();
 
   return (
-    <main className="mx-auto max-w-3xl p-4">
+    <main className="mx-auto w-full max-w-[1020px] px-5 py-6">
       <Breadcrumbs segments={segments} />
       <BrowseList segments={segments} entries={listing.entries} />
     </main>
@@ -50,16 +50,16 @@ function Breadcrumbs({ segments }: { segments: string[] }) {
   }
 
   return (
-    <nav aria-label="Breadcrumb" className="mb-4 text-sm text-neutral-500">
+    <nav aria-label="Breadcrumb" className="mb-4 text-[13px]">
       {crumbs.map((crumb, i) => {
         const isLast = i === crumbs.length - 1;
         return (
           <span key={crumb.href}>
-            {i > 0 && <span className="mx-1">/</span>}
+            {i > 0 && <span className="mx-1 text-mut">/</span>}
             {isLast ? (
-              <span className="font-medium text-neutral-900">{crumb.name}</span>
+              <span className="font-semibold text-tx2">{crumb.name}</span>
             ) : (
-              <Link href={crumb.href} className="hover:underline">
+              <Link href={crumb.href} className="text-acc hover:underline">
                 {crumb.name}
               </Link>
             )}

@@ -56,7 +56,7 @@ export function LoginForm() {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      <label className="flex flex-col gap-1 text-sm">
+      <label className="flex flex-col gap-1 text-sm text-tx2">
         Username
         <input
           name="username"
@@ -65,22 +65,22 @@ export function LoginForm() {
           autoCapitalize="none"
           autoCorrect="off"
           required
-          className="rounded border border-neutral-300 px-3 py-2"
+          className="rounded-xl border border-bd bg-card px-3 py-2 text-tx outline-none focus:border-acc"
         />
       </label>
 
-      <label className="flex flex-col gap-1 text-sm">
+      <label className="flex flex-col gap-1 text-sm text-tx2">
         Password
         <input
           name="password"
           type="password"
           autoComplete="current-password"
           required
-          className="rounded border border-neutral-300 px-3 py-2"
+          className="rounded-xl border border-bd bg-card px-3 py-2 text-tx outline-none focus:border-acc"
         />
       </label>
 
-      <label className="flex flex-col gap-1 text-sm">
+      <label className="flex flex-col gap-1 text-sm text-tx2">
         Authenticator code
         <input
           name="token"
@@ -91,12 +91,12 @@ export function LoginForm() {
           maxLength={6}
           placeholder="123456"
           required
-          className="rounded border border-neutral-300 px-3 py-2 tracking-widest"
+          className="rounded-xl border border-bd bg-card px-3 py-2 tracking-widest text-tx outline-none focus:border-acc"
         />
       </label>
 
       {error ? (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-err">
           {error}
         </p>
       ) : null}
@@ -104,7 +104,7 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={pending}
-        className="rounded bg-neutral-900 px-3 py-2 text-white disabled:opacity-60"
+        className="rounded-xl bg-acc px-3 py-2 font-semibold text-white disabled:opacity-60"
       >
         {pending ? "Signing in…" : "Sign in"}
       </button>

@@ -23,8 +23,12 @@ test("navigates into a folder and back via breadcrumbs", async ({ page }) => {
   await expect(page.getByRole("link", { name: /Week 1/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /^intro\.txt/ })).toBeVisible();
 
-  // The "Browse" breadcrumb links back to the root.
-  await page.getByRole("link", { name: "Browse", exact: true }).click();
+  // The "Browse" breadcrumb links back to the root. Scope to the breadcrumb nav so
+  // it isn't confused with the shared header's "Browse" tab.
+  await page
+    .getByRole("navigation", { name: "Breadcrumb" })
+    .getByRole("link", { name: "Browse", exact: true })
+    .click();
   await expect(page).toHaveURL(/\/vault\/browse$/);
 });
 
@@ -47,6 +51,35 @@ test("?download=1 forces an attachment for an otherwise-inline file", async ({ p
   const res = await page.request.get("/vault/api/files/Course%20A/intro.txt?download=1");
   expect(res.status()).toBe(200);
   expect(res.headers()["content-disposition"]).toContain("attachment");
+});
+
+test("renders the shared app shell on an authed page", async ({ page }) => {
+  await page.goto("/vault/browse");
+  // Wordmark + an Ask nav link (header tab on desktop, bottom bar on mobile) + toggle.
+  await expect(page.getByRole("link", { name: "MBA-Vault" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Ask", exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Toggle theme" })).toBeVisible();
+});
+
+test("theme toggle flips .dark and persists to localStorage", async ({ page }) => {
+  await page.goto("/vault/browse");
+  await page.getByRole("button", { name: "Toggle theme" }).click();
+  const stored = await page.evaluate(() => localStorage.getItem("mv-theme"));
+  expect(stored).toMatch(/^(dark|light)$/);
+  const hasDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+  expect(hasDark).toBe(stored === "dark");
+});
+
+test("login has no app shell (no nav / toggle pre-auth)", async ({ browser }) => {
+  const fresh = await browser.newContext(); // no cookie
+  try {
+    const page = await fresh.newPage();
+    await page.goto("/vault/login");
+    await expect(page.getByRole("button", { name: "Toggle theme" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Ask", exact: true })).toHaveCount(0);
+  } finally {
+    await fresh.close();
+  }
 });
 
 test("the gate still blocks browse without a session", async ({ browser }) => {

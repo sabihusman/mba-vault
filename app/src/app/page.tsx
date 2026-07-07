@@ -1,36 +1,8 @@
-import Link from "next/link";
-import { LogoutButton } from "./logout-button";
+// The app root. With Browse/Ask navigation now in the shared header, a separate
+// landing is redundant — send visitors straight to Browse. (Login redirects here
+// on success; the proxy gate has already ensured they're authenticated.)
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-6 px-6 py-16 text-center">
-      <div className="absolute right-4 top-4">
-        <LogoutButton />
-      </div>
-      <div className="flex flex-col items-center gap-3">
-        <span className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-900 text-2xl font-bold text-white dark:bg-slate-800">
-          MV
-        </span>
-        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">MBA-Vault</h1>
-        <p className="max-w-md text-balance text-slate-600 dark:text-slate-400">
-          A private, mobile-ready vault over your MBA &amp; Product School coursework —
-          browse your materials by topic and ask questions with cited sources.
-        </p>
-      </div>
-      <div className="flex flex-wrap items-center justify-center gap-3">
-        <Link
-          href="/browse"
-          className="rounded-full bg-slate-900 px-5 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300"
-        >
-          Browse materials
-        </Link>
-        <Link
-          href="/ask"
-          className="rounded-full border border-slate-300 px-5 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
-        >
-          Ask a question
-        </Link>
-      </div>
-    </main>
-  );
+  redirect("/browse");
 }
