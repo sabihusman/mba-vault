@@ -1,14 +1,18 @@
 // The on-disk vector index. Three files (shipped to /data/.index on the box):
-//   chunks.jsonl  — one chunk per line (provenance + text), row-aligned to vectors
-//   vectors.bin   — contiguous Float32, count × dims, L2-normalised (at embed time)
-//   manifest.json — model, dims, count, and per-file hashes for incremental runs
+//   chunks.jsonl      — one chunk per line (provenance + text), row-aligned to vectors
+//   vectors.bin       — contiguous Float32, count × dims, L2-normalised (at embed time)
+//   manifest.json     — model, dims, count, and per-file hashes for incremental runs
+//   ingest-report.json — needsOcr/failures from the most recent run (ingest or dry-run),
+//                        so status can be checked without re-running extraction
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import type { Chunk } from "./document-chunker";
+import type { ExtractionFailure } from "./pipeline";
 
 export const CHUNKS_FILE = "chunks.jsonl";
 export const VECTORS_FILE = "vectors.bin";
 export const MANIFEST_FILE = "manifest.json";
+export const REPORT_FILE = "ingest-report.json";
 
 // Resolve a fixed index filename under the (CLI-provided) output directory and
 // confirm the result can't escape it. The filenames are constants, so this always
@@ -69,4 +73,19 @@ export async function writeManifest(outDir: string, manifest: Manifest): Promise
 
 export async function readManifest(outDir: string): Promise<Manifest> {
   return JSON.parse(await readFile(indexPath(outDir, MANIFEST_FILE), "utf8")) as Manifest;
+}
+
+export interface IngestReport {
+  runAt: string; // ISO timestamp
+  needsOcr: string[]; // relPaths of PDFs with no extractable text
+  failures: ExtractionFailure[]; // files that threw during extraction
+}
+
+export async function writeIngestReport(outDir: string, report: IngestReport): Promise<void> {
+  await mkdir(outDir, { recursive: true });
+  await writeFile(indexPath(outDir, REPORT_FILE), JSON.stringify(report, null, 2) + "\n", "utf8");
+}
+
+export async function readIngestReport(outDir: string): Promise<IngestReport> {
+  return JSON.parse(await readFile(indexPath(outDir, REPORT_FILE), "utf8")) as IngestReport;
 }

@@ -7,7 +7,7 @@
  *   npm run ingest:dryrun -- "C:\\Users\\sabih\\OneDrive\\Documents\\MBA Coursework" .index-dryrun
  */
 import { runExtraction } from "../src/pipeline";
-import { writeChunks, writeManifest, type Manifest } from "../src/store";
+import { writeChunks, writeManifest, writeIngestReport, type Manifest } from "../src/store";
 
 const root = process.argv[2] ?? process.env.INGEST_SRC;
 const outDir = process.argv[3] ?? process.env.INGEST_OUT ?? ".index-dryrun";
@@ -29,6 +29,11 @@ const manifest: Manifest = {
   files: result.fileHashes,
 };
 await writeManifest(outDir, manifest);
+await writeIngestReport(outDir, {
+  runAt: new Date(started).toISOString(),
+  needsOcr: result.needsOcr,
+  failures: result.failures,
+});
 
 const seconds = ((Date.now() - started) / 1000).toFixed(1);
 console.log(`\nDry run complete in ${seconds}s → ${outDir}/`);
