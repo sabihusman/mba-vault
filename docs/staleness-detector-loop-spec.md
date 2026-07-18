@@ -9,7 +9,7 @@ Periodically checks key concepts/frameworks in the coursework index against curr
 ## 1 · Trigger & loop type
 
 Two triggers, one loop:
-- Cron: monthly, via a systemd timer on the Hetzner box (same pattern as the existing cert-renewal timer).
+- Cron: every 6 months, via a systemd timer on the Hetzner box (`OnCalendar` twice a year, `Persistent=true` so a missed run — box down, timer stopped — still fires at next boot instead of silently skipping half a year; same pattern as the existing cert-renewal timer).
 - Manual: a "Run staleness check" action in the app — an auth-protected, rate-limited endpoint (reuse existing session auth + rate-limit middleware).
 
 Lock file so the two triggers can't run concurrently (skip + log if a run is already in progress).
@@ -47,7 +47,7 @@ Small JSON or SQLite next to the index:
 ### Concept list bootstrap (one-time setup step)
 
 - Agent auto-extracts a proposed concept list from the existing vector index (top concepts/frameworks per course folder).
-- User gets a one-time review UI or file to prune the list before it becomes the active check-list (prevents paying monthly to check junk concepts).
+- User gets a one-time review UI or file to prune the list before it becomes the active check-list (prevents paying each 6-month run to check junk concepts).
 - Re-extraction can be re-run after new material is ingested; changes again go through review.
 
 ## 5 · Components
@@ -77,7 +77,7 @@ Small JSON or SQLite next to the index:
 
 Add a "Staleness check" row to the existing health panel (currently 5 components):
 - Meta: "Last run: {date} · {n} flagged"
-- Status: green = last run ok and < ~35 days ago · amber = partial/stuck or overdue >35 days (dead-man's-switch: catches a silently broken timer) · red = last run failed
+- Status: green = last run ok and < ~190 days ago · amber = partial/stuck or overdue >190 days (dead-man's-switch: catches a silently broken timer, sized to the 6-month cadence so it doesn't sit amber between scheduled runs) · red = last run failed
 - Expanded view: last run date, concepts checked/flagged, cost, verbatim error log if any, accent action link "Run check now" (matches the existing "Retry ingest now" pattern)
 - Overall health = worst of 6 components now.
 - Deliberate choice: stale findings do NOT affect the health color — health reflects whether the machinery works, not the content. Flagged items live in the report UI.
