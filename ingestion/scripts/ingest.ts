@@ -10,7 +10,7 @@
 import { runExtraction } from "../src/pipeline";
 import { createGeminiEmbedder, embedChunks, EMBED_MODEL, EMBED_DIMS } from "../src/embed";
 import { tryLoadPriorIndex, planEmbedding } from "../src/incremental";
-import { writeChunks, writeVectors, writeManifest, type Manifest } from "../src/store";
+import { writeChunks, writeVectors, writeManifest, writeIngestReport, type Manifest } from "../src/store";
 
 const root = process.argv[2] ?? process.env.INGEST_SRC;
 const outDir = process.argv[3] ?? process.env.INGEST_OUT ?? ".index";
@@ -65,6 +65,11 @@ const manifest: Manifest = {
   files: fileHashes,
 };
 await writeManifest(outDir, manifest);
+await writeIngestReport(outDir, {
+  runAt: new Date(started).toISOString(),
+  needsOcr,
+  failures,
+});
 
 const seconds = ((Date.now() - started) / 1000).toFixed(1);
 console.log(`\nIndex written to ${outDir}/ in ${seconds}s: ${chunks.length} vectors × ${EMBED_DIMS} dims`);
