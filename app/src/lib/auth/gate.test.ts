@@ -69,7 +69,16 @@ describe("isPublicPath", () => {
   });
 
   it("gates the app root and every protected page/api", () => {
-    for (const p of ["/", "/browse", "/ask", "/api/ask", "/api/health/extra", "/loginx"]) {
+    for (const p of [
+      "/",
+      "/browse",
+      "/ask",
+      "/api/ask",
+      "/api/health/extra",
+      "/loginx",
+      "/api/staleness/run",
+      "/api/staleness/status",
+    ]) {
       expect(isPublicPath(p), p).toBe(false);
     }
   });

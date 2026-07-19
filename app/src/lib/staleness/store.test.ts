@@ -128,6 +128,9 @@ describe("run status", () => {
     lastRunCompletedAt: null,
     lastRunStatus: null,
     lastRunFlaggedCount: 0,
+    lastRunConceptsChecked: 0,
+    lastRunConceptsTotal: 0,
+    lastRunUngroundedDowngrades: 0,
     nextScheduledRun: null,
   };
 
@@ -141,6 +144,9 @@ describe("run status", () => {
       lastRunCompletedAt: "2026-07-18T01:05:00.000Z",
       lastRunStatus: "ok",
       lastRunFlaggedCount: 2,
+      lastRunConceptsChecked: 8,
+      lastRunConceptsTotal: 8,
+      lastRunUngroundedDowngrades: 1,
       nextScheduledRun: null,
     };
     await writeRunStatus(status);

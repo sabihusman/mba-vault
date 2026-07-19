@@ -107,6 +107,9 @@ const EMPTY_RUN_STATUS: RunStatus = {
   lastRunCompletedAt: null,
   lastRunStatus: null,
   lastRunFlaggedCount: 0,
+  lastRunConceptsChecked: 0,
+  lastRunConceptsTotal: 0,
+  lastRunUngroundedDowngrades: 0,
   nextScheduledRun: null,
 };
 

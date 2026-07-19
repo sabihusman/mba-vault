@@ -79,11 +79,17 @@ export interface StalenessReport {
   };
 }
 
-// Read by the health panel (Phase 5) — smaller than a full report on purpose.
+// Read by the health panel (Phase 5) and the Phase 3 status endpoint — smaller
+// than a full report on purpose. Always reflects the last COMPLETED run only;
+// "is a run in progress right now" is a separate, deliberately non-persisted
+// signal (see run-guard.ts) layered on top by the status endpoint.
 export interface RunStatus {
   lastRunStartedAt: string | null;
   lastRunCompletedAt: string | null;
   lastRunStatus: RunStatusValue | null;
   lastRunFlaggedCount: number;
+  lastRunConceptsChecked: number;
+  lastRunConceptsTotal: number;
+  lastRunUngroundedDowngrades: number;
   nextScheduledRun: string | null; // filled in by the systemd timer (Phase 4); null until then
 }
