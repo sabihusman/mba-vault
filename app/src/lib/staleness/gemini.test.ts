@@ -3,6 +3,7 @@ import {
   parseCompareResponse,
   looksLikePromptInjection,
   estimateCostUsd,
+  applyGroundingRule,
   INPUT_PRICE_PER_MILLION_TOKENS,
   OUTPUT_PRICE_PER_MILLION_TOKENS,
   SEARCH_PRICE_PER_QUERY,
@@ -60,6 +61,33 @@ describe("looksLikePromptInjection", () => {
     const text =
       "VERDICT: current\nCURRENT_SOURCES: The framework is still the industry standard as of 2026.\nCONFIDENCE: High.";
     expect(looksLikePromptInjection(text)).toBe(false);
+  });
+});
+
+describe("applyGroundingRule", () => {
+  it("passes a grounded 'current' verdict through unchanged", () => {
+    expect(applyGroundingRule("current", 3)).toEqual({ verdict: "current", downgradeReason: null });
+  });
+
+  it("passes a grounded 'stale' verdict through unchanged", () => {
+    expect(applyGroundingRule("stale", 1)).toEqual({ verdict: "stale", downgradeReason: null });
+  });
+
+  it("downgrades an ungrounded 'current' verdict", () => {
+    expect(applyGroundingRule("current", 0)).toEqual({ verdict: "couldnt_verify", downgradeReason: "ungrounded" });
+  });
+
+  it("downgrades an ungrounded 'stale' verdict", () => {
+    expect(applyGroundingRule("stale", 0)).toEqual({ verdict: "couldnt_verify", downgradeReason: "ungrounded" });
+  });
+
+  it("leaves the model's own honest 'couldnt_verify' untouched — not conflated with a downgrade", () => {
+    expect(applyGroundingRule("couldnt_verify", 0)).toEqual({ verdict: "couldnt_verify", downgradeReason: null });
+  });
+
+  it("leaves 'needs_review' untouched regardless of grounding — it's not a factual claim", () => {
+    expect(applyGroundingRule("needs_review", 0)).toEqual({ verdict: "needs_review", downgradeReason: null });
+    expect(applyGroundingRule("needs_review", 2)).toEqual({ verdict: "needs_review", downgradeReason: null });
   });
 });
 

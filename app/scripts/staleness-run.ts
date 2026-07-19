@@ -71,14 +71,15 @@ async function main(): Promise<void> {
   if (report.stopReason) console.log(`  stopped early: ${report.stopReason}`);
   console.log(
     `  ${report.summary.conceptsChecked}/${report.summary.conceptsTotal} concepts checked, ` +
-      `${report.summary.flagged} flagged, ${report.summary.steps} steps, ` +
-      `~$${report.summary.estimatedCostUsd.toFixed(4)} estimated cost`,
+      `${report.summary.flagged} flagged, ${report.summary.ungroundedDowngrades} ungrounded-downgraded, ` +
+      `${report.summary.steps} steps, ~$${report.summary.estimatedCostUsd.toFixed(4)} estimated cost`,
   );
   if (report.findings.length > 0) {
     console.log("\nFindings:");
     for (const f of report.findings) {
       const flag = f.verdict === "stale" || f.verdict === "needs_review" ? " ⚠" : "";
-      console.log(`  [${f.verdict}]${flag} ${f.course} / ${f.name}`);
+      const downgraded = f.downgradeReason ? ` (model said "${f.modelVerdict}", ${f.downgradeReason})` : "";
+      console.log(`  [${f.verdict}]${flag}${downgraded} ${f.course} / ${f.name}`);
     }
   }
   if (report.skipped.length > 0) {
