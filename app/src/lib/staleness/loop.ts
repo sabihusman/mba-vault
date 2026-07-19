@@ -94,6 +94,8 @@ export async function runStalenessCheck(
         name: concept.name,
         course: concept.course,
         verdict: result.verdict,
+        modelVerdict: result.modelVerdict,
+        downgradeReason: result.downgradeReason,
         courseworkSummary: courseworkExcerpts,
         currentSummary: result.currentSummary,
         evidenceLinks: result.evidenceLinks,
@@ -123,6 +125,7 @@ export async function runStalenessCheck(
 
   const finishedAt = deps.now();
   const flagged = findings.filter((f) => f.verdict === "stale" || f.verdict === "needs_review").length;
+  const ungroundedDowngrades = findings.filter((f) => f.downgradeReason === "ungrounded").length;
 
   return {
     runId: toRunId(startedAt),
@@ -136,6 +139,7 @@ export async function runStalenessCheck(
       conceptsTotal: activeConcepts.length,
       conceptsChecked: findings.length,
       flagged,
+      ungroundedDowngrades,
       steps,
       estimatedCostUsd,
       consecutiveErrors,

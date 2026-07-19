@@ -6,7 +6,7 @@
 // producing garbage concepts silently.
 import { GoogleGenAI, Type } from "@google/genai";
 import { ANSWER_MODEL } from "../ask/gemini";
-import type { EvidenceLink, Verdict } from "./types";
+import type { DowngradeReason, EvidenceLink, Verdict } from "./types";
 
 export const CONCEPT_MODEL = ANSWER_MODEL;
 export const COMPARE_MODEL = ANSWER_MODEL;
@@ -153,6 +153,27 @@ export function parseCompareResponse(text: string): ParsedComparison {
   };
 }
 
+export interface GroundingRuleResult {
+  verdict: Verdict;
+  downgradeReason: DowngradeReason | null;
+}
+
+/** Self-validation: a "current"/"stale" verdict is a factual claim, and the
+ *  model can produce one from training memory alone without ever actually
+ *  searching — a live run caught exactly this (3 of 8 verdicts came back
+ *  "current" with zero real grounding sources). If the API's own grounding
+ *  metadata shows no sources for a current/stale verdict, downgrade it to
+ *  "couldnt_verify" rather than trust an unsubstantiated claim. Deliberately
+ *  scoped to current/stale only — the model's own honest "couldnt_verify" or
+ *  "needs_review" is left exactly as-is, never relabeled as a downgrade. */
+export function applyGroundingRule(verdict: Verdict, evidenceLinksCount: number): GroundingRuleResult {
+  const assertsAFact = verdict === "current" || verdict === "stale";
+  if (assertsAFact && evidenceLinksCount === 0) {
+    return { verdict: "couldnt_verify", downgradeReason: "ungrounded" };
+  }
+  return { verdict, downgradeReason: null };
+}
+
 // Best-effort heuristic, not a guarantee — mitigates, doesn't eliminate, the
 // same honest framing as /ask's LLM hardening (SECURITY.md §7). We only ever
 // see Gemini's own synthesized answer, never the raw fetched page, so this can
@@ -195,7 +216,9 @@ export function estimateCostUsd(usage: UsageForCost, searchQueries: number): num
 }
 
 export interface ConceptComparisonResult {
-  verdict: Verdict;
+  verdict: Verdict; // final verdict, after escalation and/or the grounding rule
+  modelVerdict: Verdict; // what the model itself said, never overwritten
+  downgradeReason: DowngradeReason | null;
   currentSummary: string;
   confidenceNote: string;
   evidenceLinks: EvidenceLink[];
@@ -246,12 +269,25 @@ export function createGeminiComparator(apiKey: string): ConceptComparator {
       const searchQueries = grounding?.webSearchQueries?.length ?? 0;
       const costUsd = estimateCostUsd(response.usageMetadata ?? {}, searchQueries);
 
+      // Escalation (possible prompt injection) always wins and is unrelated to
+      // grounding; otherwise self-validate the model's verdict against the
+      // API's real grounding metadata before trusting it.
+      const grounded = escalated
+        ? { verdict: "needs_review" as Verdict, downgradeReason: null }
+        : applyGroundingRule(parsed.verdict, evidenceLinks.length);
+
+      const confidenceNote = escalated
+        ? "Flagged for review: the model's output contained a pattern resembling an instruction embedded in fetched content."
+        : grounded.downgradeReason === "ungrounded"
+          ? `Model said "${parsed.verdict}" but the response had no grounding sources — downgraded to couldn't verify. Original reasoning: ${parsed.confidenceNote}`
+          : parsed.confidenceNote;
+
       return {
-        verdict: escalated ? "needs_review" : parsed.verdict,
+        verdict: grounded.verdict,
+        modelVerdict: parsed.verdict,
+        downgradeReason: grounded.downgradeReason,
         currentSummary: parsed.currentSummary,
-        confidenceNote: escalated
-          ? "Flagged for review: the model's output contained a pattern resembling an instruction embedded in fetched content."
-          : parsed.confidenceNote,
+        confidenceNote,
         evidenceLinks,
         escalated,
         costUsd,

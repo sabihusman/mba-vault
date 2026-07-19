@@ -68,7 +68,15 @@ function report(runId: string, over: Partial<StalenessReport> = {}): StalenessRe
     stopReason: null,
     findings: [],
     skipped: [],
-    summary: { conceptsTotal: 0, conceptsChecked: 0, flagged: 0, steps: 0, estimatedCostUsd: 0, consecutiveErrors: 0 },
+    summary: {
+      conceptsTotal: 0,
+      conceptsChecked: 0,
+      flagged: 0,
+      ungroundedDowngrades: 0,
+      steps: 0,
+      estimatedCostUsd: 0,
+      consecutiveErrors: 0,
+    },
     ...over,
   };
 }

@@ -30,11 +30,20 @@ export interface EvidenceLink {
   uri: string;
 }
 
+// The only downgrade reason today: the model asserted "current"/"stale" but the
+// API's real grounding metadata came back with zero sources — i.e. it answered
+// from training memory, not an actual search. Never applied to an already-honest
+// "couldnt_verify"/"needs_review" from the model itself (see applyGroundingRule
+// in gemini.ts) — this is a distinct signal from ConceptFinding.escalated.
+export type DowngradeReason = "ungrounded";
+
 export interface ConceptFinding {
   conceptId: string;
   name: string;
   course: string;
-  verdict: Verdict;
+  verdict: Verdict; // final verdict, after any escalation/grounding-rule override
+  modelVerdict: Verdict; // what the model itself said, never overwritten
+  downgradeReason: DowngradeReason | null;
   courseworkSummary: string; // (a) — the retrieved coursework excerpts + source refs, verbatim
   currentSummary: string; // (b) — what current sources say, from the grounded model call
   evidenceLinks: EvidenceLink[]; // (c) — from the API's own grounding metadata, never model-authored
@@ -62,7 +71,8 @@ export interface StalenessReport {
   summary: {
     conceptsTotal: number; // active concepts at run start
     conceptsChecked: number; // findings.length
-    flagged: number; // verdict is "stale" or "needs_review"
+    flagged: number; // final verdict is "stale" or "needs_review"
+    ungroundedDowngrades: number; // findings with downgradeReason === "ungrounded"
     steps: number; // one Gemini comparison call = one step
     estimatedCostUsd: number;
     consecutiveErrors: number; // count at the time the run stopped/finished

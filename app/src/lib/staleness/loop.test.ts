@@ -31,6 +31,8 @@ function index(chunks: ChunkMeta[]): LoadedIndex {
 function fixedResult(over: Partial<ConceptComparisonResult> = {}): ConceptComparisonResult {
   return {
     verdict: "current",
+    modelVerdict: "current",
+    downgradeReason: null,
     currentSummary: "still accurate",
     confidenceNote: "high",
     evidenceLinks: [],
@@ -73,6 +75,29 @@ describe("runStalenessCheck — success path", () => {
 
     const report = await runStalenessCheck(concepts, deps);
     expect(report.summary.flagged).toBe(2); // stale + needs_review
+  });
+
+  it("passes an already-downgraded finding through (loop.ts trusts the comparator, doesn't re-derive)", async () => {
+    // The downgrade decision is made in gemini.ts's compareConcept; loop.ts just
+    // carries the fields through and rolls up the count.
+    const concepts = [concept("a"), concept("b"), concept("c")];
+    let call = 0;
+    const deps = baseDeps({
+      compareConcept: async () => {
+        call++;
+        if (call === 1) {
+          return fixedResult({ verdict: "couldnt_verify", modelVerdict: "current", downgradeReason: "ungrounded" });
+        }
+        return fixedResult(); // grounded "current", no downgrade
+      },
+    });
+
+    const report = await runStalenessCheck(concepts, deps);
+    expect(report.summary.ungroundedDowngrades).toBe(1);
+    expect(report.summary.flagged).toBe(0); // downgraded verdict is couldnt_verify, not stale/needs_review
+    expect(report.findings[0]).toMatchObject({ verdict: "couldnt_verify", modelVerdict: "current", downgradeReason: "ungrounded" });
+    expect(report.findings[1]).toMatchObject({ verdict: "current", modelVerdict: "current", downgradeReason: null });
+    expect(report.findings[2]).toMatchObject({ verdict: "current", modelVerdict: "current", downgradeReason: null });
   });
 
   it("returns an empty-but-valid report for zero active concepts", async () => {
@@ -202,6 +227,8 @@ describe("applyCheckedTimestamps", () => {
         name: "a",
         course: "Product Management",
         verdict: "current",
+        modelVerdict: "current",
+        downgradeReason: null,
         courseworkSummary: "",
         currentSummary: "",
         evidenceLinks: [],
