@@ -3,9 +3,11 @@
  * concept in the reviewed check-list against current web sources and writes a
  * dated report. Report-only: never writes to /data or the vector index.
  *
- * This is a manual CLI entry point for now — the systemd timer (Phase 4) and
- * app endpoint + button (Phase 3) will call the same runStalenessCheck() with
- * the same deps, just wired up differently.
+ * This is a manual CLI entry point. The Phase 3 app endpoint (POST
+ * /api/staleness/run) calls the exact same executeStalenessRun() via the same
+ * createRealOrchestrateDeps() wiring — this script is now a thin, console-
+ * printing wrapper around it, so the run+persist sequence lives in one place
+ * (lib/staleness/orchestrate.ts) rather than being duplicated here.
  *
  * Usage:
  *   GEMINI_API_KEY=... DATA_DIR=/path/to/data STATE_DIR=/path/to/state \
@@ -19,11 +21,7 @@
  * are checked — "pending"/"rejected" concepts are skipped entirely, not even
  * counted in the report.
  */
-import { getIndex } from "../src/lib/ask/index-store";
-import { createGeminiClient } from "../src/lib/ask/gemini";
-import { createGeminiComparator } from "../src/lib/staleness/gemini";
-import { runStalenessCheck, applyCheckedTimestamps } from "../src/lib/staleness/loop";
-import { readConceptList, writeConceptList, writeReport, writeRunStatus } from "../src/lib/staleness/store";
+import { createRealOrchestrateDeps, executeStalenessRun } from "../src/lib/staleness/orchestrate";
 
 async function main(): Promise<void> {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -32,40 +30,8 @@ async function main(): Promise<void> {
   const costCapUsd = process.env.COST_CAP_USD ? Number(process.env.COST_CAP_USD) : undefined;
   const stepCap = process.env.STEP_CAP ? Number(process.env.STEP_CAP) : undefined;
 
-  const list = await readConceptList();
-  const active = list.concepts.filter((c) => c.status === "active");
-  console.log(`${list.concepts.length} concepts on file, ${active.length} active.`);
-  if (active.length === 0) {
-    console.log("Nothing to check — review your concept list (staleness:bootstrap) and mark some \"active\".");
-  }
-
-  const geminiClient = createGeminiClient(apiKey);
-  const comparator = createGeminiComparator(apiKey);
-
   console.log("Running staleness check …");
-  const report = await runStalenessCheck(
-    active,
-    {
-      getIndex,
-      embedQuery: (text) => geminiClient.embedQuery(text),
-      compareConcept: (concept, excerpts) => comparator.compareConcept(concept, excerpts),
-      now: () => new Date(),
-    },
-    { costCapUsd, stepCap },
-  );
-
-  await writeReport(report);
-
-  const updatedConcepts = applyCheckedTimestamps(list.concepts, report.findings);
-  await writeConceptList({ generatedAt: list.generatedAt, concepts: updatedConcepts });
-
-  await writeRunStatus({
-    lastRunStartedAt: report.startedAt,
-    lastRunCompletedAt: report.finishedAt,
-    lastRunStatus: report.status,
-    lastRunFlaggedCount: report.summary.flagged,
-    nextScheduledRun: null, // set by the systemd timer once Phase 4 exists
-  });
+  const report = await executeStalenessRun(createRealOrchestrateDeps(apiKey), new Date(), { costCapUsd, stepCap });
 
   console.log(`\nRun ${report.runId}: ${report.status.toUpperCase()}`);
   if (report.stopReason) console.log(`  stopped early: ${report.stopReason}`);

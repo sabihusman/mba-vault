@@ -6,6 +6,7 @@
 // auto-expand. The health *data* is computed server-side in lib/health.
 import { useCallback, useEffect, useState } from "react";
 import type { HealthReport, Status } from "@/lib/health/types";
+import { StalenessTrigger } from "./staleness-trigger";
 
 const STATUS_URL = "/vault/api/status";
 const POLL_MS = 5 * 60 * 1000;
@@ -144,6 +145,11 @@ function HealthPanel({
             );
           })}
         </ul>
+
+        {/* Standalone Phase 3 widget — not yet the structured 6th health
+            component (Phase 5), so it's kept visually separate below the
+            worst-of rollup rather than inside the <ul> above. */}
+        <StalenessTrigger />
 
         <p className="mt-3 text-center text-[11px] text-mut">
           Checked every 5 min · overall = worst component
