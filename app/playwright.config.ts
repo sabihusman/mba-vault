@@ -11,6 +11,13 @@ const E2E_SESSION_SECRET =
   process.env.E2E_SESSION_SECRET ?? randomBytes(32).toString("base64url");
 process.env.E2E_SESSION_SECRET = E2E_SESSION_SECRET;
 
+// Same reasoning, for the Staleness Detector's cron-secret auth path (gate.ts's
+// hasValidCronSecret) — generated once and shared with workers via env so the
+// staleness-cron spec can send a header the running app actually recognizes.
+const E2E_CRON_SECRET =
+  process.env.E2E_CRON_SECRET ?? randomBytes(32).toString("base64url");
+process.env.E2E_CRON_SECRET = E2E_CRON_SECRET;
+
 // Point the app at the committed fixture tree instead of the box's /data.
 // Playwright runs this config with cwd = the app workspace, so resolve from there
 // (avoids import.meta, which breaks Playwright's CJS config loader).
@@ -56,6 +63,7 @@ export default defineConfig({
       SESSION_SECRET: E2E_SESSION_SECRET,
       DATA_DIR: E2E_DATA_DIR,
       STATE_DIR: E2E_STATE_DIR,
+      STALENESS_CRON_SECRET: E2E_CRON_SECRET,
     },
   },
 });

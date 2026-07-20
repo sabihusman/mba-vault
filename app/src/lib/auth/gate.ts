@@ -2,6 +2,7 @@
 // tested without Next's request machinery. Takes the raw sealed cookie value and
 // answers one question: does this represent a logged-in user? Fails closed — any
 // problem unsealing (missing, tampered, expired, wrong secret) returns false.
+import { timingSafeEqual, createHash } from "node:crypto";
 import { unsealData } from "iron-session";
 import { getSessionSecret } from "./config";
 import { SESSION_TTL_SECONDS, type SessionData } from "./session";
@@ -41,4 +42,33 @@ export async function hasValidSession(sealedCookie: string | undefined): Promise
   } catch {
     return false;
   }
+}
+
+// Alternate auth for the Staleness Detector's systemd timer (SECURITY.md §8):
+// it isn't a browser and can't hold a session cookie, so it authenticates with
+// a shared secret instead. Scoped to exactly one path — this is not a general
+// bypass mechanism. The original design minted a real session cookie inside
+// the container via iron-session, but that package isn't reachable at all in
+// the standalone Docker build (Next 16's production output doesn't ship a
+// flat, requirable node_modules tree), so the timer needed its own path.
+export const CRON_SECRET_HEADER = "x-cron-secret";
+const CRON_TRIGGER_PATH = "/api/staleness/run";
+
+function safeEqual(a: string, b: string): boolean {
+  // Hash first so both sides are fixed-length (32 bytes) — timingSafeEqual
+  // throws on a length mismatch, and the secret's real length shouldn't be
+  // observable from an attacker-controlled header's length anyway.
+  const ah = createHash("sha256").update(a).digest();
+  const bh = createHash("sha256").update(b).digest();
+  return timingSafeEqual(ah, bh);
+}
+
+/** True only for the staleness-run trigger path, with a header that matches a
+ *  CONFIGURED secret. Never falls open: a missing/empty STALENESS_CRON_SECRET
+ *  always returns false, regardless of what header value is presented. */
+export function hasValidCronSecret(pathname: string, headerValue: string | null | undefined): boolean {
+  if (pathname !== CRON_TRIGGER_PATH) return false;
+  const secret = process.env.STALENESS_CRON_SECRET;
+  if (!secret || !headerValue) return false;
+  return safeEqual(headerValue, secret);
 }
