@@ -2,18 +2,18 @@
 // overlapping. This is a SIMPLE IN-PROCESS guard (a module-level variable) —
 // it only stops two triggers from overlapping *within this one Node process*.
 //
-// IMPORTANT — does NOT protect against Phase 4's cron: the systemd timer
-// (Phase 4) runs the loop from a SEPARATE OS process (a CLI invocation), which
-// this in-memory flag cannot see at all. Today that's harmless because only
-// the app endpoint calls this guard — the CLI script runs manually, never
-// concurrently with itself. But the moment the systemd timer exists, the app
-// button and the cron CAN race and double-spend real money, since neither
-// process can see the other's lock. Phase 4 MUST introduce a real file-based
-// lock (e.g. flock-style exclusive create) *before or together with* the timer
-// unit — never ship the timer without it. Keep this module's four-function
-// interface (tryAcquireRunLock/releaseRunLock/isRunning/currentRunId) stable
-// so that swap is a drop-in change for every caller (route handler, and the
-// CLI script once it also needs to check the lock).
+// This turned out to be sufficient even after Phase 4 (the systemd timer): the
+// timer does NOT spawn a separate OS process running the loop directly — it
+// authenticates and calls the exact same POST /api/staleness/run endpoint the
+// "Run now" button calls (see SECURITY.md's staleness-check section), so both
+// triggers are always handled by this one long-running server process and
+// this same in-memory guard. There is deliberately no separate CLI-invoked
+// path in production (the standalone Docker image doesn't ship `scripts/` or
+// a TS runner) — `staleness-run.ts` remains a local/manual dev-only entry
+// point, never something the timer runs directly. If that ever changes (the
+// loop gets triggered by a genuinely separate OS process), THIS guard would
+// no longer be sufficient and would need a real file-based lock instead — see
+// git history for the version of this comment from when that was the plan.
 let runningId: string | null = null;
 
 /** Acquire the lock for runId, or return false if a run is already in progress. */
