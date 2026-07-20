@@ -12,7 +12,16 @@ Two triggers, one loop:
 - Cron: every 6 months, via a systemd timer on the Hetzner box (`OnCalendar` twice a year, `Persistent=true` so a missed run — box down, timer stopped — still fires at next boot instead of silently skipping half a year; same pattern as the existing cert-renewal timer).
 - Manual: a "Run staleness check" action in the app — an auth-protected, rate-limited endpoint (reuse existing session auth + rate-limit middleware).
 
-Lock file so the two triggers can't run concurrently (skip + log if a run is already in progress).
+**Concurrency (Phase 4, revised from the original plan below):** the two triggers don't need a
+separate lock file after all. The timer doesn't run the loop in its own OS process — it
+authenticates (mints a session cookie the same way a real login would, via the box's own
+`iron-session` + auth env vars — no new auth mechanism) and calls the *same* POST endpoint the
+in-app button calls. Both triggers are therefore always handled by the one long-running app
+server process, so the existing in-process concurrency guard already prevents them from
+overlapping (skip + log if a run is already in progress) — see SECURITY.md §8. *(Original plan
+was a standalone file lock, written when the assumption was that the timer would run the loop
+directly via a separate CLI process; that CLI path never became viable in production — the
+deployed image doesn't ship a TS runner — so the design changed instead.)*
 
 Loop type: bounded task loop, not a goal loop. Clear definition of done; no open-ended outcome.
 
