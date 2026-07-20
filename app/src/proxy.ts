@@ -6,9 +6,12 @@
 // it defaults to the Node.js runtime. We read the sealed cookie straight off the
 // NextRequest (synchronous request.cookies API — NOT the async cookies() helper)
 // and hand it to hasValidSession.
+// Relative imports (not "@/") — this file is unit-tested directly
+// (proxy.test.ts), and the "@/" alias isn't configured for vitest (see
+// index-store.ts/search.ts and status/route.ts for the same convention).
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE } from "@/lib/auth/session";
-import { hasValidSession, isPublicPath } from "@/lib/auth/gate";
+import { SESSION_COOKIE } from "./lib/auth/session";
+import { hasValidSession, hasValidCronSecret, CRON_SECRET_HEADER, isPublicPath } from "./lib/auth/gate";
 
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
@@ -19,7 +22,11 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
 
   const sealed = request.cookies.get(SESSION_COOKIE)?.value;
-  if (await hasValidSession(sealed)) {
+  const cronSecret = request.headers.get(CRON_SECRET_HEADER);
+  // Session cookie (the button, a human) OR a valid cron secret (the systemd
+  // timer, scoped to exactly one path in hasValidCronSecret) — see SECURITY.md
+  // §8. Either is sufficient; nothing below this needs to know which matched.
+  if ((await hasValidSession(sealed)) || hasValidCronSecret(pathname, cronSecret)) {
     return NextResponse.next();
   }
 
