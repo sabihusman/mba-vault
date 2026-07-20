@@ -296,32 +296,40 @@ instructions embedded in a source chunk can only ever mislead that same user.
 ## 8. Staleness Detector — automated trigger  ✅ (Phase 4)
 
 **Why:** The Staleness Detector's cron trigger (loop spec §1) needs to run unattended twice a
-year, but the app has no separate "service account" — it's single-user auth only (§1). Rather
-than invent a second auth mechanism just for one automated caller, the timer authenticates as
-the same user, the same way the browser does.
+year, but the app has no separate "service account" — it's single-user auth only (§1).
 
 **What's built:**
 - **`staleness-check.timer`** — `OnCalendar=*-01,07-01 03:00:00` (twice a year),
   `RandomizedDelaySec=3600`, `Persistent=true` (a missed run — box down at the scheduled time —
   still fires at next boot instead of silently skipping 6 months), mirroring `lego-renew.timer`'s
   structure (§2).
-- **`staleness-check.service`** (oneshot) runs **`/opt/mba-vault/staleness-cron.sh`**, which:
-  1. Mints a session cookie via `docker exec mba-vault node -e "require('iron-session').sealData(...)"`
-     — this runs *inside* the already-running container, using its own already-installed
-     `iron-session` package and already-loaded `AUTH_USERNAME`/`SESSION_SECRET` env vars. **No new
-     secret, no new auth primitive** — it's the exact same sealed-cookie mechanism a real login
-     produces, just minted directly instead of via the login form.
-  2. `curl -X POST` with that cookie against `http://127.0.0.1:3000/vault/api/staleness/run` — the
-     same auth-gated, rate-limited endpoint the in-app "Run now" button calls.
-  3. Treats HTTP 202 (started) and 409 (already running — e.g. the button fired at the same
-     moment) as success; anything else exits non-zero so `journalctl`/`systemctl status` surfaces
-     a real failure.
-- **No separate concurrency lock needed.** The timer doesn't run the loop in a separate process —
-  it calls the same endpoint the button calls, so both triggers are always handled by the one
-  long-running Next.js server process and its existing in-process guard (`run-guard.ts`) already
-  prevents them from overlapping. (The standalone Docker image doesn't ship `scripts/` or a TS
-  runner, so running the CLI script directly via `docker exec` was never an option in prod —
-  `staleness-run.ts` stays a local/manual dev-only entry point.)
+- **`staleness-check.service`** (oneshot) runs **`/opt/mba-vault/staleness-cron.sh`**, a plain
+  `curl -X POST -H "X-Cron-Secret: $STALENESS_CRON_SECRET" http://127.0.0.1:3000/vault/api/staleness/run`
+  — the same endpoint the in-app "Run now" button calls, just a different auth mechanism (below).
+  Treats HTTP 202 (started) and 409 (already running — e.g. the button fired at the same moment)
+  as success; anything else exits non-zero so `journalctl`/`systemctl status` surfaces a real
+  failure.
+- **Auth: a scoped shared secret, not a minted session cookie.** The original design (session
+  auth) needed to mint an `iron-session` cookie from *inside* the container via `docker exec ...
+  node -e`. That never worked in prod — the Next 16 **standalone** Docker build doesn't ship a
+  flat, requirable `node_modules` tree, so `iron-session` isn't reachable that way at all (found
+  via `find / -name iron-session -type d` returning nothing in the running container). Fixed
+  with a second, narrowly-scoped auth path instead:
+  - `gate.ts`'s `hasValidCronSecret(pathname, header)` — accepts an `X-Cron-Secret` header **only**
+    on `POST /api/staleness/run`, compared against `STALENESS_CRON_SECRET` with a constant-time
+    check (`timingSafeEqual` over SHA-256 digests, so unequal lengths aren't an issue). **Never
+    falls open**: if `STALENESS_CRON_SECRET` isn't set, this path always rejects, headers or not.
+  - `proxy.ts` accepts **either** a valid session cookie **or** a valid cron secret — the
+    session-cookie path is untouched; the button's behavior didn't change at all.
+  - Everything downstream of the gate (rate limiting, the concurrency guard) is unaffected either
+    way, since `trigger.ts` has no idea which auth mechanism let a request through — a valid cron
+    secret still consumes the same 2/hour rate limit and is still blocked by the same in-process
+    run-guard if a run is already in progress.
+- **No separate concurrency lock needed.** The timer still doesn't run the loop in a separate
+  process — it calls the same endpoint the button calls, so both triggers are always handled by
+  the one long-running Next.js server process and its existing in-process guard (`run-guard.ts`)
+  already prevents them from overlapping. (`staleness-run.ts` stays a local/manual dev-only CLI
+  entry point — the standalone image still doesn't ship it, unrelated to this fix.)
 - **Dead-man's-switch:** a 2nd `ExecStartPost=-/usr/bin/curl -fsS -m 10 <healthchecks.io URL>`
   (leading `-` = best-effort, doesn't fail the unit on a network blip), same pattern as
   `lego-renew.service`.
@@ -329,8 +337,12 @@ the same user, the same way the browser does.
 **How to verify:**
 - `systemctl list-timers staleness-check.timer` → next scheduled fire.
 - `sudo systemctl start staleness-check.service` (manual dry run) → `journalctl -u
-  staleness-check.service` shows the cookie mint, the curl response (`{"status":"started",...}`
-  or `{"status":"already_running",...}`), and a green exit.
+  staleness-check.service` shows the curl response (`{"status":"started",...}` or
+  `{"status":"already_running",...}`) and a green exit.
+- `curl -X POST http://127.0.0.1:3000/vault/api/staleness/run` with no header, or the wrong
+  secret, → `401`. Unit tests (`gate.test.ts`, `proxy.test.ts`) and an E2E spec
+  (`e2e/staleness.spec.ts`) cover every combination: valid/wrong/missing secret, and the secret
+  never granting access to any other path.
 - healthchecks.io shows the check going green on each run.
 
 ---

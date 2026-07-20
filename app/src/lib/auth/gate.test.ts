@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { sealData } from "iron-session";
-import { hasValidSession, isPublicPath } from "./gate";
+import { hasValidSession, hasValidCronSecret, isPublicPath } from "./gate";
 import { SESSION_TTL_SECONDS, type SessionData } from "./session";
 
 const SECRET = "unit-test-session-secret-at-least-32-chars-long";
@@ -49,6 +49,47 @@ describe("hasValidSession", () => {
   // manually — not unit-tested here because it can't be exercised without either
   // backdating the seal or a 7-day wait. The "accepts a valid cookie" case proves
   // the matched-ttl round-trip; the E2E suite (PR5) covers real session lifetime.
+});
+
+describe("hasValidCronSecret", () => {
+  const PATH = "/api/staleness/run";
+
+  afterEach(() => {
+    delete process.env.STALENESS_CRON_SECRET;
+  });
+
+  it("accepts a header that matches the configured secret, on the right path", () => {
+    process.env.STALENESS_CRON_SECRET = "a-long-random-cron-secret";
+    expect(hasValidCronSecret(PATH, "a-long-random-cron-secret")).toBe(true);
+  });
+
+  it("rejects a wrong secret", () => {
+    process.env.STALENESS_CRON_SECRET = "a-long-random-cron-secret";
+    expect(hasValidCronSecret(PATH, "guess")).toBe(false);
+  });
+
+  it("rejects a missing header", () => {
+    process.env.STALENESS_CRON_SECRET = "a-long-random-cron-secret";
+    expect(hasValidCronSecret(PATH, undefined)).toBe(false);
+    expect(hasValidCronSecret(PATH, null)).toBe(false);
+  });
+
+  it("never falls open when STALENESS_CRON_SECRET isn't configured, even with a header present", () => {
+    delete process.env.STALENESS_CRON_SECRET;
+    expect(hasValidCronSecret(PATH, "anything")).toBe(false);
+    expect(hasValidCronSecret(PATH, "")).toBe(false);
+  });
+
+  it("is scoped to exactly the staleness-run path — a correct secret elsewhere is rejected", () => {
+    process.env.STALENESS_CRON_SECRET = "a-long-random-cron-secret";
+    expect(hasValidCronSecret("/api/staleness/status", "a-long-random-cron-secret")).toBe(false);
+    expect(hasValidCronSecret("/api/ask", "a-long-random-cron-secret")).toBe(false);
+  });
+
+  it("rejects an empty-string secret header even if the configured secret is also falsy-ish", () => {
+    process.env.STALENESS_CRON_SECRET = "x";
+    expect(hasValidCronSecret(PATH, "")).toBe(false);
+  });
 });
 
 describe("isPublicPath", () => {
