@@ -2,6 +2,7 @@
 // impure collectors (fs / tls / network) so the thresholds and wording are easy
 // to unit-test.
 import type { Status } from "./types";
+import type { RunStatusValue } from "../staleness/types";
 
 // Disk: warn when free space gets low, err when it's nearly gone. A 4 GB box with
 // documents + index is the constraint, so these are deliberately conservative.
@@ -36,6 +37,29 @@ export function indexStatus(exists: boolean, ageDays: number): Status {
   return "ok";
 }
 
+// Staleness: a dead-man's-switch on the MACHINERY (did the loop run, did it
+// finish cleanly), never on what it found — a report full of stale concepts is
+// still a "healthy" run. Sized to the 6-month cadence + margin, so a run
+// doesn't sit "overdue" between two legitimate scheduled fires.
+export const STALENESS_OVERDUE_DAYS = 200;
+
+/** Priority: failed always wins (a hard failure outranks "just overdue");
+ *  then partial; then ok is checked against the overdue threshold; a
+ *  never-completed run (lastRunStatus null) is treated as overdue. */
+export function stalenessStatus(
+  runStatus: { lastRunStatus: RunStatusValue | null; lastRunCompletedAt: string | null },
+  nowMs: number,
+): Status {
+  if (runStatus.lastRunStatus === null) return "warn"; // never run
+  if (runStatus.lastRunStatus === "failed") return "err";
+  if (runStatus.lastRunStatus === "partial") return "warn";
+
+  // lastRunStatus === "ok"
+  const completedMs = runStatus.lastRunCompletedAt ? Date.parse(runStatus.lastRunCompletedAt) : NaN;
+  if (Number.isNaN(completedMs)) return "warn"; // defensive: "ok" with no completion time shouldn't happen
+  return daysBetween(completedMs, nowMs) > STALENESS_OVERDUE_DAYS ? "warn" : "ok";
+}
+
 /** Whole days between two instants (floored, never negative). */
 export function daysBetween(fromMs: number, toMs: number): number {
   return Math.max(0, Math.floor((toMs - fromMs) / 86_400_000));
@@ -50,6 +74,11 @@ export function formatAge(ms: number): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h`;
   return `${Math.floor(h / 24)}d`;
+}
+
+/** Short absolute date for a "Last run: …" line — e.g. "Jul 20, 2026". */
+export function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
 export function formatBytes(bytes: number): string {

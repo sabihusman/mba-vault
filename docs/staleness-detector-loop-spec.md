@@ -91,14 +91,31 @@ Small JSON or SQLite next to the index:
 - Per-day cost cap on top of per-run.
 - Tracing via LangSmith (user has access) — wire up when the eval module is reached.
 
-## Health panel integration (6th row)
+## Health panel integration (6th row)  ✅ (Phase 5)
 
-Add a "Staleness check" row to the existing health panel (currently 5 components):
-- Meta: "Last run: {date} · {n} flagged"
-- Status: green = last run ok and < ~190 days ago · amber = partial/stuck or overdue >190 days (dead-man's-switch: catches a silently broken timer, sized to the 6-month cadence so it doesn't sit amber between scheduled runs) · red = last run failed
-- Expanded view: last run date, concepts checked/flagged, cost, verbatim error log if any, accent action link "Run check now" (matches the existing "Retry ingest now" pattern)
-- Overall health = worst of 6 components now.
-- Deliberate choice: stale findings do NOT affect the health color — health reflects whether the machinery works, not the content. Flagged items live in the report UI.
+Added a "Staleness check" row to the health panel, alongside the existing 5 (App container,
+HTTPS cert, Search index, Gemini API, Disk space):
+- Meta: `"Last run: {date} · {n} checked · {m} flagged"` (or `"Never run"`), computed server-side
+  in `checkStaleness()` (`lib/health/checks.ts`) from the persisted `RunStatus`
+  (`lib/staleness/store.ts`'s `readRunStatus()`).
+- Status (`stalenessStatus()` in `lib/health/classify.ts`): green = last run **ok** and
+  **< 200 days** ago · amber = partial, or overdue (**>200 days**, `STALENESS_OVERDUE_DAYS`) — the
+  dead-man's-switch, sized to the 6-month cadence plus margin so it doesn't sit amber between
+  scheduled runs — or never-run · red = last run **failed** (outranks overdue: a hard failure is
+  never softened to amber just because it's also old).
+- Expanded view: the row's collapsed header already carries the summary line above; expanding it
+  reveals the "Run now" action (`staleness-trigger.tsx`, reworked from its earlier Phase 3
+  standalone-widget form to fit inline here) rather than a separate "Retry ingest now"-style
+  pattern — no such pattern actually existed elsewhere in the panel to match, so this establishes
+  it fresh. **No cost or verbatim error log shown here** — `RunStatus` deliberately doesn't carry
+  those (kept intentionally small); this row is only ever about *whether the machinery ran*, not
+  a diagnostic dump. Findings/cost detail belongs in the Phase 6 report UI.
+- Overall health = worst of 6 components now (`buildReport()`, `worst()` unchanged — already
+  generic over the list length).
+- Deliberate choice, unchanged: stale findings do NOT affect the health color — health reflects
+  whether the machinery works, not the content. `stalenessStatus()`'s input type has no findings
+  field at all, so this isn't just a convention, it's structurally enforced. Flagged items live in
+  the report UI (Phase 6).
 
 ## Hard constraints
 

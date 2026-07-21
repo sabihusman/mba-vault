@@ -10,15 +10,18 @@ import { join } from "node:path";
 import { connect as tlsConnect } from "node:tls";
 import { GoogleGenAI } from "@google/genai";
 import { getDataDir } from "../browse/data-dir";
+import { readRunStatus } from "../staleness/store";
 import type { Component, HealthReport } from "./types";
 import { worst } from "./types";
 import {
   diskStatus,
   certStatus,
   indexStatus,
+  stalenessStatus,
   daysBetween,
   formatAge,
   formatBytes,
+  formatDate,
 } from "./classify";
 
 const PROBE_TTL_MS = 5 * 60 * 1000; // cache the network probes for a poll cycle
@@ -165,17 +168,38 @@ function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+// Dead-man's-switch on the MACHINERY only (stalenessStatus never sees findings
+// — see classify.ts). readRunStatus() already falls back to an empty/never-run
+// status on any read error, so this never needs its own try/catch.
+async function checkStaleness(): Promise<Component> {
+  const now = Date.now();
+  const runStatus = await readRunStatus();
+  const metric =
+    runStatus.lastRunStatus === null
+      ? "Never run"
+      : `Last run: ${formatDate(runStatus.lastRunCompletedAt ?? runStatus.lastRunStartedAt ?? new Date(now).toISOString())} · ` +
+        `${runStatus.lastRunConceptsChecked} checked · ${runStatus.lastRunFlaggedCount} flagged`;
+  return {
+    key: "staleness",
+    label: "Staleness check",
+    status: stalenessStatus(runStatus, now),
+    metric,
+    lastRun: new Date(now).toISOString(),
+  };
+}
+
 /** Run every check and roll up to overall = worst component (handoff §4). Order
- *  matches the panel: container, cert, index, gemini, disk. */
+ *  matches the panel: container, cert, index, gemini, disk, staleness. */
 export async function buildReport(): Promise<HealthReport> {
-  const [container, cert, index, gemini, disk] = await Promise.all([
+  const [container, cert, index, gemini, disk, staleness] = await Promise.all([
     Promise.resolve(checkContainer()),
     checkCert(),
     checkIndex(),
     checkGemini(),
     checkDisk(),
+    checkStaleness(),
   ]);
-  const components = [container, cert, index, gemini, disk];
+  const components = [container, cert, index, gemini, disk, staleness];
   return {
     overall: worst(components.map((c) => c.status)),
     checkedAt: new Date().toISOString(),

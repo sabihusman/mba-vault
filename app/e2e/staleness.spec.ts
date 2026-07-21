@@ -1,26 +1,41 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { loginViaCookie } from "./auth-cookie";
 
 test.beforeEach(async ({ context }) => {
   await loginViaCookie(context);
 });
 
-test("staleness trigger shows never-run status inside the health panel", async ({ page }) => {
-  await page.goto("/vault/browse");
+/** Open the "Staleness check" accordion row if it isn't already expanded (the
+ *  panel auto-expands any non-ok row, and "never run" is amber/non-ok — but
+ *  asserting on that incidental default would make this test fragile to any
+ *  future change in what the e2e fixture env's staleness status defaults to). */
+async function openStalenessRow(page: Page) {
+  const row = page.getByRole("button", { name: /Staleness check/ });
+  if ((await row.getAttribute("aria-expanded")) !== "true") await row.click();
+}
 
+test("staleness renders as a 6th accordion row, showing never-run status when expanded", async ({ page }) => {
+  await page.goto("/vault/browse");
   await page.getByRole("button", { name: /System health/ }).click();
-  await expect(page.getByRole("heading", { name: "Staleness check", level: 3 })).toBeVisible();
-  await expect(page.getByText("Never run yet.")).toBeVisible();
+
+  const row = page.getByRole("button", { name: /Staleness check/ });
+  await expect(row).toBeVisible();
+  await expect(row).toContainText("Never run");
+
+  await openStalenessRow(page);
   await expect(page.getByRole("button", { name: "Run now" })).toBeEnabled();
 });
 
-test("clicking Run now surfaces the not-configured state when GEMINI_API_KEY is unset", async ({ page }) => {
+test("clicking Run now (from inside the row) surfaces the not-configured state when GEMINI_API_KEY is unset", async ({
+  page,
+}) => {
   // The e2e environment has no GEMINI_API_KEY (only browse/login/resume need
   // fixtures) — so the real POST route's own hasApiKey() check is what
   // produces this response. Exercises the actual click -> fetch -> status
   // branch -> render path end to end, not just the unit-tested pieces.
   await page.goto("/vault/browse");
   await page.getByRole("button", { name: /System health/ }).click();
+  await openStalenessRow(page);
 
   await page.getByRole("button", { name: "Run now" }).click();
   await expect(page.getByText("Not configured (missing GEMINI_API_KEY).")).toBeVisible();
