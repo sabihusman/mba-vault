@@ -67,9 +67,19 @@ test("health pill renders and /api/status returns an aggregate when authed", asy
 
   const res = await page.request.get("/vault/api/status");
   expect(res.status()).toBe(200);
-  const body = (await res.json()) as { overall: string; components: unknown[] };
+  const body = (await res.json()) as { overall: string; components: { key: string; status: string }[] };
   expect(["ok", "warn", "err", "unknown"]).toContain(body.overall);
-  expect(body.components).toHaveLength(5);
+  expect(body.components).toHaveLength(6); // 5 original + Phase 5's staleness row
+
+  // Proves checkStaleness() is actually wired into buildReport()'s worst-of
+  // rollup end to end (not just present in the response) — the fixture env
+  // has never run a staleness check, so it must classify as "warn" (amber).
+  // Not asserting the exact overall pill color here: this env's Gemini
+  // component is already "err" (no GEMINI_API_KEY in e2e), an unrelated
+  // pre-existing condition that would dominate any overall-color assertion
+  // regardless of what the staleness component contributes.
+  const staleness = body.components.find((c) => c.key === "staleness");
+  expect(staleness?.status).toBe("warn");
 });
 
 test("/api/status is gated without a session", async ({ browser }) => {

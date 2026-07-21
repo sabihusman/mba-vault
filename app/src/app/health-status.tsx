@@ -131,7 +131,12 @@ function HealthPanel({
                   <span className="text-[12px] text-tx2">{c.metric}</span>
                   <span aria-hidden className="text-mut">{isOpen ? "⌄" : "›"}</span>
                 </button>
-                {isOpen && (
+                {isOpen && c.key === "staleness" && (
+                  <div className="px-3 pb-3">
+                    <StalenessTrigger />
+                  </div>
+                )}
+                {isOpen && c.key !== "staleness" && (
                   <div className="space-y-2 px-3 pb-3 text-[12px] text-tx2">
                     <p>Last checked {new Date(c.lastRun).toLocaleTimeString()}</p>
                     {c.error && (
@@ -145,11 +150,6 @@ function HealthPanel({
             );
           })}
         </ul>
-
-        {/* Standalone Phase 3 widget — not yet the structured 6th health
-            component (Phase 5), so it's kept visually separate below the
-            worst-of rollup rather than inside the <ul> above. */}
-        <StalenessTrigger />
 
         <p className="mt-3 text-center text-[11px] text-mut">
           Checked every 5 min · overall = worst component

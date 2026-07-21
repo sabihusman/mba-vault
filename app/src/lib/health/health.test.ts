@@ -4,6 +4,8 @@ import {
   diskStatus,
   certStatus,
   indexStatus,
+  stalenessStatus,
+  STALENESS_OVERDUE_DAYS,
   daysBetween,
   formatAge,
   formatBytes,
@@ -47,6 +49,57 @@ describe("indexStatus", () => {
     expect(indexStatus(false, 0)).toBe("err");
     expect(indexStatus(true, 5)).toBe("ok");
     expect(indexStatus(true, 45)).toBe("warn");
+  });
+});
+
+describe("stalenessStatus", () => {
+  const NOW = Date.parse("2026-07-20T00:00:00.000Z");
+  const day = 86_400_000;
+
+  it("is warn (never run) when no run has ever completed", () => {
+    expect(stalenessStatus({ lastRunStatus: null, lastRunCompletedAt: null }, NOW)).toBe("warn");
+  });
+
+  it("is ok when the last run was ok and recent", () => {
+    const completedAt = new Date(NOW - 10 * day).toISOString();
+    expect(stalenessStatus({ lastRunStatus: "ok", lastRunCompletedAt: completedAt }, NOW)).toBe("ok");
+  });
+
+  it("is warn (overdue) when the last ok run is older than the threshold", () => {
+    const completedAt = new Date(NOW - (STALENESS_OVERDUE_DAYS + 1) * day).toISOString();
+    expect(stalenessStatus({ lastRunStatus: "ok", lastRunCompletedAt: completedAt }, NOW)).toBe("warn");
+  });
+
+  it("stays ok exactly at the threshold boundary (in whole days), warn one day past it", () => {
+    // daysBetween floors to whole days, so the boundary has to move by a full
+    // day (not 1ms) to actually cross it.
+    const atThreshold = new Date(NOW - STALENESS_OVERDUE_DAYS * day).toISOString();
+    expect(stalenessStatus({ lastRunStatus: "ok", lastRunCompletedAt: atThreshold }, NOW)).toBe("ok");
+    const pastThreshold = new Date(NOW - (STALENESS_OVERDUE_DAYS + 1) * day).toISOString();
+    expect(stalenessStatus({ lastRunStatus: "ok", lastRunCompletedAt: pastThreshold }, NOW)).toBe("warn");
+  });
+
+  it("is warn for a partial run, regardless of age", () => {
+    const completedAt = new Date(NOW - 1 * day).toISOString();
+    expect(stalenessStatus({ lastRunStatus: "partial", lastRunCompletedAt: completedAt }, NOW)).toBe("warn");
+  });
+
+  it("is err for a failed run, even a recent one", () => {
+    const completedAt = new Date(NOW - 1 * day).toISOString();
+    expect(stalenessStatus({ lastRunStatus: "failed", lastRunCompletedAt: completedAt }, NOW)).toBe("err");
+  });
+
+  it("a failed run stays err even if it's also very old — failure outranks overdue", () => {
+    const completedAt = new Date(NOW - (STALENESS_OVERDUE_DAYS + 100) * day).toISOString();
+    expect(stalenessStatus({ lastRunStatus: "failed", lastRunCompletedAt: completedAt }, NOW)).toBe("err");
+  });
+
+  it("never lets stale FINDINGS influence the result — the classifier's input has no findings field at all", () => {
+    // This test exists to document intent: stalenessStatus only ever looks at
+    // lastRunStatus/lastRunCompletedAt. There is no flaggedCount/downgrade
+    // parameter for it to ignore — the type signature itself is the guarantee.
+    const completedAt = new Date(NOW - 1 * day).toISOString();
+    expect(stalenessStatus({ lastRunStatus: "ok", lastRunCompletedAt: completedAt }, NOW)).toBe("ok");
   });
 });
 

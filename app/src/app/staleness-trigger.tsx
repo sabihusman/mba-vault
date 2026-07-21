@@ -1,34 +1,26 @@
 "use client";
 
-// Minimal "Run staleness check now" trigger (Phase 3). Deliberately small and
-// self-contained: no polling loop, no findings/report list — the full report
-// UI is Phase 6, and the structured 6th health-panel row is Phase 5. This is
-// just a button + one status line, reusing the same design tokens as the
-// health panel it lives inside.
+// The "Run now" action for the Staleness Detector's health-panel row (Phase
+// 5). Lives INSIDE that row's expanded accordion slot (health-status.tsx
+// special-cases c.key === "staleness" to render this instead of the generic
+// expanded block) — the row's collapsed header already shows the persisted
+// last-run summary (via buildReport()'s checkStaleness()), so this component
+// only needs the button + a transient result message.
+//
+// It keeps its OWN fetch to /api/staleness/status rather than reusing the
+// parent's /api/status poll, because it needs `running`/`currentRunId` — live
+// in-process state (run-guard.ts) that a 5-min-cached Component snapshot
+// deliberately doesn't carry. Fetches once when the row expands (mounts); no
+// separate polling interval.
 import { useCallback, useEffect, useState } from "react";
 
 const STATUS_URL = "/vault/api/staleness/status";
 const RUN_URL = "/vault/api/staleness/run";
 
-type RunStatusValue = "ok" | "partial" | "failed";
-
 interface StalenessStatus {
   running: boolean;
   currentRunId: string | null;
-  lastRunStartedAt: string | null;
-  lastRunCompletedAt: string | null;
-  lastRunStatus: RunStatusValue | null;
-  lastRunFlaggedCount: number;
-  lastRunConceptsChecked: number;
-  lastRunConceptsTotal: number;
-  lastRunUngroundedDowngrades: number;
 }
-
-const STATUS_LABEL: Record<RunStatusValue, string> = {
-  ok: "OK",
-  partial: "Partial",
-  failed: "Failed",
-};
 
 export function StalenessTrigger() {
   const [status, setStatus] = useState<StalenessStatus | null>(null);
@@ -45,8 +37,6 @@ export function StalenessTrigger() {
   }, []);
 
   useEffect(() => {
-    // load() only setState()s after an await (fetch) — an async poll, not a
-    // synchronous cascade, same reasoning as HealthStatus's own effect.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
@@ -77,33 +67,16 @@ export function StalenessTrigger() {
   }, [load]);
 
   return (
-    <div className="mt-3 rounded-xl border border-bd p-3">
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <h3 className="text-[13px] font-medium text-tx">Staleness check</h3>
-        <button
-          type="button"
-          onClick={() => void run()}
-          disabled={busy || Boolean(status?.running)}
-          className="shrink-0 rounded-lg border border-bd px-2 py-1 text-[11px] text-tx2 hover:bg-hdr disabled:opacity-50"
-        >
-          {status?.running ? "Running…" : "Run now"}
-        </button>
-      </div>
-      <p className="text-[12px] text-tx2">{summaryLine(status)}</p>
-      {message && <p className="mt-1 text-[11px] text-mut">{message}</p>}
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={() => void run()}
+        disabled={busy || Boolean(status?.running)}
+        className="rounded-lg border border-accbd bg-accbg px-2.5 py-1 text-[11px] font-medium text-acc hover:border-acc disabled:opacity-50"
+      >
+        {status?.running ? "Running…" : "Run now"}
+      </button>
+      {message && <p className="text-[11px] text-tx2">{message}</p>}
     </div>
-  );
-}
-
-function summaryLine(status: StalenessStatus | null): string {
-  if (!status) return "Loading…";
-  if (status.running) return "A check is currently running.";
-  if (!status.lastRunStartedAt) return "Never run yet.";
-
-  const when = new Date(status.lastRunCompletedAt ?? status.lastRunStartedAt).toLocaleString();
-  const label = status.lastRunStatus ? STATUS_LABEL[status.lastRunStatus] : "Unknown";
-  return (
-    `Last run ${when} · ${label} · ${status.lastRunConceptsChecked}/${status.lastRunConceptsTotal} checked · ` +
-    `${status.lastRunFlaggedCount} flagged · ${status.lastRunUngroundedDowngrades} ungrounded-downgraded`
   );
 }
