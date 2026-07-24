@@ -8,13 +8,14 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/browse", label: "Browse", icon: "▤" },
   { href: "/ask", label: "Ask", icon: "◍" },
+  { href: "/staleness", label: "Report", icon: "◷" },
 ];
 
 export function BottomTabs() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-2 border-t border-bd bg-hdr desk:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-3 border-t border-bd bg-hdr desk:hidden">
       {TABS.map((tab) => {
         const active = pathname.startsWith(tab.href);
         return (

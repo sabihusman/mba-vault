@@ -117,6 +117,73 @@ HTTPS cert, Search index, Gemini API, Disk space):
   field at all, so this isn't just a convention, it's structurally enforced. Flagged items live in
   the report UI (Phase 6).
 
+## Phase 6 — Report UI  ✅
+
+The reading surface for what the loop produces. Reuses existing plumbing; zero new npm
+dependencies, zero new state shapes — the UI renders `StalenessReport` files already
+written by the loop (`lib/staleness/store.ts`: `listReportIds()` / `readReport()`).
+
+### Route & data flow
+
+- New page: `/staleness` (`app/src/app/staleness/page.tsx`), a thin server shell (same
+  shape as `ask`) passing the report to a client view (`report-view.tsx`); pure
+  presentation logic lives in `lib/staleness/report-format.ts` so it's unit-testable.
+  Session-gated by the proxy like every other page; `force-dynamic` so it never serves a
+  build-time snapshot of the JSON.
+- **No new API endpoints.** The app is one unified server, so the page reads the store
+  directly — the two existing endpoints (`run`, `status`) stay as-is.
+- **Entry point (confirmed decision): a top-level "Report" tab** alongside Browse and Ask,
+  in both the mobile bottom tab bar and the desktop header tabs. The health-panel
+  Staleness row keeps a secondary "View report" link next to "Run now" (that row itself
+  stays machinery-only per Phase 5's rule).
+
+### Page content
+
+- **Latest run by default**; older runs reachable via `?run=<runId>` (the param is only
+  matched against ids the store itself listed — never used as a path; unknown/hostile
+  values fall back to newest) plus a "Past runs" link list. runIds are fixed-width
+  ISO-derived stamps, so the store's `sort().reverse()` is genuinely newest-first.
+- **Run summary header**: date, status (ok/partial/failed + `stopReason`), checked/total,
+  flagged count, ungrounded downgrades, estimated cost. This is where cost and error
+  detail live — deliberately absent from the health row.
+- **Findings list**, worst first: `needs_review` → `stale` → `couldnt_verify` → `current`.
+  Collapsed row = name + course + verdict badge + one-line summary (truncated
+  `confidenceNote`); expands (health-panel accordion idiom) to coursework summary (a),
+  current-sources summary (b), evidence links (c) as plain outbound links
+  (`rel="noopener noreferrer"`), confidence note (d), checkedAt.
+- **Ungrounded downgrades are visually distinct in the collapsed row**: "Couldn't verify —
+  ungrounded (model gave no evidence)" (amber) vs "Couldn't verify — no external match"
+  (neutral); the expansion additionally explains the downgrade (`modelVerdict` kept
+  visible). `escalated` findings get their own red marker.
+- **Skipped section**: `skipped[]` with reasons, shown whenever non-empty.
+- **Empty state**: no report yet → plain message pointing at the health panel's "Run now".
+
+### Guardrails
+
+- Read-only page: no mutations, no writes, no re-run action here (that stays on the health
+  panel row) — keeps the report surface un-rate-limited and simple.
+- All report text is model/web-derived → render as plain text, never as HTML/markdown
+  (prompt-injection surface); evidence URIs come from grounding metadata but are still
+  rendered as inert links, never fetched server-side.
+- Health-panel color rule unchanged: nothing on this page feeds back into health status.
+
+### Out of scope (explicitly)
+
+- Concept-list management UI (review stays file-based per the bootstrap section).
+- Report diffing across runs, export, or notifications.
+- Deleting old reports (they're tiny JSON files; revisit only if it ever matters).
+
+### Tests
+
+- Unit (`report-format.test.ts`): badge mapping incl. the ungrounded/no-match split,
+  worst-first ordering, `?run` selection (incl. hostile values), truncation.
+- E2E (`e2e/staleness-report.spec.ts`): tab navigation, latest-run header, distinct
+  badges, expansion detail, `?run` + bogus-run fallback, session gate. Reports are seeded
+  into the shared e2e STATE_DIR; `run-status.json` is untouched so the health-panel spec's
+  "Never run" assertion still holds. The empty state has no e2e (deleting the reports dir
+  would race the parallel desktop/mobile projects on the shared state dir) — its selection
+  logic is unit-tested instead.
+
 ## Hard constraints
 
 - Report-only: no writes to /data/docs or the index from this loop, under any condition.
