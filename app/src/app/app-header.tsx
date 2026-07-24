@@ -13,6 +13,7 @@ import { HealthStatus } from "./health-status";
 const TABS = [
   { href: "/browse", label: "Browse" },
   { href: "/ask", label: "Ask" },
+  { href: "/staleness", label: "Report" },
 ];
 
 export function AppHeader() {

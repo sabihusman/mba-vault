@@ -13,6 +13,7 @@
 // deliberately doesn't carry. Fetches once when the row expands (mounts); no
 // separate polling interval.
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 
 const STATUS_URL = "/vault/api/staleness/status";
 const RUN_URL = "/vault/api/staleness/run";
@@ -76,6 +77,13 @@ export function StalenessTrigger() {
       >
         {status?.running ? "Running…" : "Run now"}
       </button>
+      {/* Secondary entry point — the primary one is the top-level Report tab. */}
+      <Link
+        href="/staleness"
+        className="ml-2 text-[11px] text-acc underline underline-offset-2"
+      >
+        View report
+      </Link>
       {message && <p className="text-[11px] text-tx2">{message}</p>}
     </div>
   );
