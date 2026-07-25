@@ -34,8 +34,11 @@ Produce a dated staleness report: for each flagged concept — (a) what the cour
 
 - Success: all concepts processed → write report + run summary (steps, tokens, cost) → stop.
 - Stuck (stop with partial report):
-  - per-run cost cap hit (start at ~$1; make configurable)
-  - step cap hit (e.g. 3 searches per concept, 50 total; configurable)
+  - per-run cost cap hit (start at ~$1; configurable via `STALENESS_COST_CAP_USD`,
+    honored by both the route and the dev CLI — unset/invalid values fall back to
+    the default, never NaN)
+  - step cap hit (e.g. 3 searches per concept, 50 total; configurable via
+    `STALENESS_STEP_CAP`, same fallback rule)
   - nothing usable found for a concept → mark "couldn't verify", never guess
   - Gemini or search errors 3× consecutively
 - Self-validation (added after the first live run, 2026-07-18): a "current" or

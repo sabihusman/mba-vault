@@ -15,6 +15,7 @@ import { clientIp } from "@/lib/auth/request-ip";
 import { consumeStalenessRun } from "@/lib/staleness/ratelimit";
 import { tryAcquireRunLock, releaseRunLock, currentRunId } from "@/lib/staleness/run-guard";
 import { createRealOrchestrateDeps, executeStalenessRun } from "@/lib/staleness/orchestrate";
+import { envCapOptions } from "@/lib/staleness/env-caps";
 import { triggerStalenessRun } from "@/lib/staleness/trigger";
 
 export async function POST(request: Request): Promise<Response> {
@@ -29,7 +30,8 @@ export async function POST(request: Request): Promise<Response> {
       executeRun: (startedAt) => {
         // hasApiKey() above already proved this is set.
         const apiKey = process.env.GEMINI_API_KEY!;
-        return executeStalenessRun(createRealOrchestrateDeps(apiKey), startedAt);
+        // Cost/step cap overrides from env, if set; defaults otherwise.
+        return executeStalenessRun(createRealOrchestrateDeps(apiKey), startedAt, envCapOptions());
       },
       now: () => new Date(),
     },

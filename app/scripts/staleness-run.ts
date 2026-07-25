@@ -13,25 +13,25 @@
  *   GEMINI_API_KEY=... DATA_DIR=/path/to/data STATE_DIR=/path/to/state \
  *     npm run staleness:run
  *
- *   Optional overrides (loop spec §3 — hard caps, not suggestions):
- *     COST_CAP_USD=1     # per-run cost cap in USD (estimate, see gemini.ts)
- *     STEP_CAP=50        # max concepts attempted this run
+ *   Optional overrides (loop spec §3 — hard caps, not suggestions). Same
+ *   namespaced names the production route honors; invalid or non-positive
+ *   values fall back to the defaults rather than passing NaN into the loop:
+ *     STALENESS_COST_CAP_USD=1   # per-run cost cap in USD (estimate, see gemini.ts)
+ *     STALENESS_STEP_CAP=50      # max concepts attempted this run
  *
  * Only concepts marked "active" (via staleness:bootstrap + your manual review)
  * are checked — "pending"/"rejected" concepts are skipped entirely, not even
  * counted in the report.
  */
 import { createRealOrchestrateDeps, executeStalenessRun } from "../src/lib/staleness/orchestrate";
+import { envCapOptions } from "../src/lib/staleness/env-caps";
 
 async function main(): Promise<void> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) fail("GEMINI_API_KEY environment variable is required");
 
-  const costCapUsd = process.env.COST_CAP_USD ? Number(process.env.COST_CAP_USD) : undefined;
-  const stepCap = process.env.STEP_CAP ? Number(process.env.STEP_CAP) : undefined;
-
   console.log("Running staleness check …");
-  const report = await executeStalenessRun(createRealOrchestrateDeps(apiKey), new Date(), { costCapUsd, stepCap });
+  const report = await executeStalenessRun(createRealOrchestrateDeps(apiKey), new Date(), envCapOptions());
 
   console.log(`\nRun ${report.runId}: ${report.status.toUpperCase()}`);
   if (report.stopReason) console.log(`  stopped early: ${report.stopReason}`);
