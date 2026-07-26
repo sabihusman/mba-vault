@@ -1,0 +1,31 @@
+{
+  "_comment": "Phase B (gap-filler/tutor) source whitelist. Versioned in the repo, editable without code changes. Planning artifact — no code reads this yet. Domains are matched against the hostname of a source URL; 'docs.*' is a pattern, see tier1_patterns.",
+  "version": 1,
+  "rules": {
+    "non_whitelisted_sources": "allowed, but any draft citing one is flagged for extra review — never silently trusted",
+    "min_independent_tier1_sources_per_draft": 2,
+    "below_minimum": "draft is flagged, not rejected — the human approval step sees the flag"
+  },
+  "tier1_domains": [
+    { "domain": "en.wikipedia.org", "label": "Wikipedia (English)" },
+    { "domain": "scrumguides.org", "label": "Scrum Guides" },
+    { "domain": "arxiv.org", "label": "arXiv" },
+    { "domain": "anthropic.com", "label": "Anthropic" },
+    { "domain": "openai.com", "label": "OpenAI" },
+    { "domain": "blog.google", "label": "Google AI" },
+    { "domain": "deepmind.google", "label": "Google DeepMind" },
+    { "domain": "svpg.com", "label": "SVPG / Marty Cagan" },
+    { "domain": "jmlr.org", "label": "JMLR" },
+    { "domain": "jair.org", "label": "JAIR" },
+    { "domain": "productschool.com", "label": "Product School" },
+    { "domain": "melissaperri.com", "label": "Melissa Perri" },
+    { "domain": "investopedia.com", "label": "Investopedia" }
+  ],
+  "tier1_patterns": [
+    {
+      "pattern": "docs.*",
+      "label": "Official tool/framework documentation",
+      "note": "Matches documentation subdomains (e.g. docs.python.org, docs.github.com). Intent: a tool's own official docs are Tier 1 for claims about that tool only."
+    }
+  ]
+}
