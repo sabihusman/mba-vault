@@ -347,6 +347,30 @@ year, but the app has no separate "service account" — it's single-user auth on
 
 ---
 
+## 9. Dependency security — advisory response log
+
+**2026-07-30 — Next 16.2.9 → 16.2.12** (with the MCP connector work pending, the proxy being
+our only gate made this a merge-first prerequisite):
+- **GHSA-6gpp-xcg3-4w24** (CVSS 8.3): middleware/proxy auth bypass in App Router under
+  Turbopack. Affected 16.0.0–16.2.10, **patched in 16.2.11**. Its second precondition —
+  a **single-entry `config.i18n.locales`** — does **not** apply to us: `app/next.config.ts`
+  has no `i18n` block at all. Recorded for honesty; we bumped anyway rather than relying on
+  the precondition, and 16.2.12 (not .11) because the same audit batch included eight more
+  Next advisories (SSRF in rewrites/Server Actions, response-cache confusion, server-function
+  endpoint disclosure, DoS) whose fixes land by 16.2.12 — it's the version `npm audit`
+  resolves as covering the full set.
+- **fast-xml-parser** (ingestion, local-only): DOCTYPE entity-expansion DoS — fixed cleanly
+  by `npm audit fix` (lockfile-only; `^5.9.3` already allowed the patched version).
+- **Left unfixed, deliberately** (force-fix would be breaking or nonsense):
+  `brace-expansion`/`minimatch` highs live under the **eslint** toolchain (dev-only, never
+  shipped; fix requires the eslint 10 major — take it with a planned toolchain bump);
+  `postcss` and `sharp` highs are **nested pins inside next@16.2.12 itself** (npm's only
+  offer is downgrading to next 9 — no). Exposure note: `sharp` is Next's image-optimization
+  dependency and we don't use `next/image`; `postcss` is build-time. Revisit on the next
+  Next patch.
+
+---
+
 ### Honest caveats
 Public access trades the "invisible to the internet" privacy of a VPN-only design for
 convenience. That's a reasonable choice here — but it is exactly why the auth + rate-limiting
