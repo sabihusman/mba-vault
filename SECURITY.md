@@ -371,6 +371,49 @@ our only gate made this a merge-first prerequisite):
 
 ---
 
+## 10. MCP connector endpoint  🚧 (Phase 1 — built, not yet deployed)
+
+**What it is:** a remote MCP server inside the app (`POST /vault/api/mcp`) exposing ONE
+read-only tool, `search_vault(query)` — embed the query, cosine-search the existing vector
+index, return chunk excerpts + citations. Built so Claude.ai can connect as a custom
+connector. Retrieval only: no Gemini answer step, and no code path that writes to
+`/data/docs` or the index exists behind this endpoint at all.
+
+**Why the auth design looks the way it does (plain language):**
+- **Kill switch first.** The proxy 404s the MCP path unless `MCP_ENABLED=true` (the exact
+  string). A 404 means "this endpoint does not exist" — with the flag unset, an internet
+  scanner can't even learn there's something here to attack, and no auth code runs. Like
+  every gate in this app, it fails closed: unset/missing/typo'd env → off.
+- **Then a bearer token, in the proxy, not the route.** Phase 1 auth is a static token
+  (`Authorization: Bearer …` vs `MCP_STATIC_TOKEN`), checked in `proxy.ts` via
+  `hasValidMcpToken()` — the same pattern as the staleness cron secret (§8): scoped to
+  exactly one path (the token opens nothing else), constant-time compare (`timingSafeEqual`
+  over SHA-256 digests), and never falls open (no configured token ⇒ every request rejected).
+  Putting it in the proxy means the route handler is unreachable without auth by
+  construction — there's no "forgot the check in the handler" failure mode.
+- **Session cookies are deliberately NOT accepted on the MCP path.** The connector is a
+  machine; the browser is a human. Keeping the two auth planes disjoint means a browser
+  wandering onto the endpoint (CSRF, link tricks) authenticates as nobody, and the MCP
+  token can never ride along into the human app.
+- **Why a static token at all:** it's the cheap probe for an open question — whether
+  Claude.ai's connector client accepts our IP-literal HTTPS URL — using Claude's
+  `static_headers` (beta) connector auth, before investing in the full OAuth 2.1 server
+  (Phase 2, which replaces this token; the kill switch and proxy placement stay).
+
+**Token hygiene:** generate with `openssl rand -base64url 32` on the box; lives only in
+`/opt/mba-vault/.env` (never git — repo is public); rotate by editing `.env` +
+`docker compose up -d --force-recreate app`; kill instantly by setting `MCP_ENABLED=false`
+(or removing it) and recreating.
+
+**How to verify:** unit tests (`gate-mcp.test.ts`, `proxy-mcp.test.ts`) cover
+enabled/disabled × valid/wrong/missing/malformed token × cookie-not-accepted ×
+token-opens-no-other-path; e2e (`e2e/mcp.spec.ts`) proves the 401s and an authenticated
+MCP `initialize` round-trip over real HTTP. On the box: `curl -k -X POST
+https://<ip>/vault/api/mcp` → `404` with the flag off, `401` with it on and no token,
+and a JSON-RPC response only with the real token.
+
+---
+
 ### Honest caveats
 Public access trades the "invisible to the internet" privacy of a VPN-only design for
 convenience. That's a reasonable choice here — but it is exactly why the auth + rate-limiting

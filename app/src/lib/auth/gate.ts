@@ -72,3 +72,29 @@ export function hasValidCronSecret(pathname: string, headerValue: string | null 
   if (!secret || !headerValue) return false;
   return safeEqual(headerValue, secret);
 }
+
+// ---------------------------------------------------------------------------
+// MCP connector (SECURITY.md §10; Phase 1 — static bearer token; OAuth replaces
+// this in Phase 2).
+// Same design rules as the cron secret above: path-scoped, constant-time
+// compare, never falls open. Plus a kill switch: unless MCP_ENABLED=true the
+// endpoint doesn't exist at all (the proxy 404s before any auth question).
+// ---------------------------------------------------------------------------
+export const MCP_PATH = "/api/mcp";
+
+/** Kill switch — the MCP endpoint is 404 unless this is EXACTLY "true". */
+export function isMcpEnabled(): boolean {
+  return process.env.MCP_ENABLED === "true";
+}
+
+/** True only for the MCP path, with `Authorization: Bearer <token>` matching a
+ *  CONFIGURED MCP_STATIC_TOKEN. Never falls open: unset/empty token env means
+ *  every request is rejected, whatever it presents. */
+export function hasValidMcpToken(pathname: string, authorizationHeader: string | null | undefined): boolean {
+  if (pathname !== MCP_PATH) return false;
+  const token = process.env.MCP_STATIC_TOKEN;
+  if (!token || !authorizationHeader) return false;
+  const match = /^Bearer\s+(.+)$/i.exec(authorizationHeader);
+  if (!match) return false;
+  return safeEqual(match[1], token);
+}

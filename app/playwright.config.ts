@@ -18,6 +18,13 @@ const E2E_CRON_SECRET =
   process.env.E2E_CRON_SECRET ?? randomBytes(32).toString("base64url");
 process.env.E2E_CRON_SECRET = E2E_CRON_SECRET;
 
+// Same again for the MCP endpoint's Phase 1 static bearer token. The e2e app
+// runs with MCP_ENABLED=true so the specs can prove the token gate over real
+// HTTP; the disabled/404 path can't be exercised here (one shared server env)
+// and is covered by unit tests (proxy-mcp.test.ts).
+const E2E_MCP_TOKEN = process.env.E2E_MCP_TOKEN ?? randomBytes(32).toString("base64url");
+process.env.E2E_MCP_TOKEN = E2E_MCP_TOKEN;
+
 // Point the app at the committed fixture tree instead of the box's /data.
 // Playwright runs this config with cwd = the app workspace, so resolve from there
 // (avoids import.meta, which breaks Playwright's CJS config loader).
@@ -64,6 +71,8 @@ export default defineConfig({
       DATA_DIR: E2E_DATA_DIR,
       STATE_DIR: E2E_STATE_DIR,
       STALENESS_CRON_SECRET: E2E_CRON_SECRET,
+      MCP_ENABLED: "true",
+      MCP_STATIC_TOKEN: E2E_MCP_TOKEN,
     },
   },
 });
