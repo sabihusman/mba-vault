@@ -11,7 +11,15 @@
 // index-store.ts/search.ts and status/route.ts for the same convention).
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE } from "./lib/auth/session";
-import { hasValidSession, hasValidCronSecret, CRON_SECRET_HEADER, isPublicPath } from "./lib/auth/gate";
+import {
+  hasValidSession,
+  hasValidCronSecret,
+  CRON_SECRET_HEADER,
+  isPublicPath,
+  isMcpEnabled,
+  hasValidMcpToken,
+  MCP_PATH,
+} from "./lib/auth/gate";
 
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
@@ -19,6 +27,23 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // The login flow and PWA shell/assets are reachable without a session.
   if (isPublicPath(pathname)) {
     return NextResponse.next();
+  }
+
+  // MCP connector endpoint (SECURITY.md §10): handled entirely here, before the
+  // session check, because its auth is a bearer token, not a cookie. Ordering
+  // is deliberate — kill switch first (404: with MCP_ENABLED unset the
+  // endpoint does not exist, so nothing can be probed), then the token check
+  // (401). A session cookie is NOT accepted here: the MCP client is a machine,
+  // and keeping the paths disjoint means a browser can never be confused into
+  // exercising this endpoint with its cookie.
+  if (pathname === MCP_PATH) {
+    if (!isMcpEnabled()) {
+      return NextResponse.json({ error: "Not found." }, { status: 404 });
+    }
+    if (hasValidMcpToken(pathname, request.headers.get("authorization"))) {
+      return NextResponse.next();
+    }
+    return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
 
   const sealed = request.cookies.get(SESSION_COOKIE)?.value;
