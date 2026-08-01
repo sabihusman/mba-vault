@@ -40,6 +40,11 @@ playwright/.cache/
 # Local ingestion output (chunks.jsonl / vectors.bin / manifest.json)
 .index/
 .index-dryrun/
+# …EXCEPT the e2e fixture index: 4 hand-written SYNTHETIC chunks, zero real
+# course content (see app/e2e/mcp.spec.ts). Both lines are needed — git skips
+# negations inside a directory that is itself excluded.
+!/app/test-fixtures/data/.index/
+!/app/test-fixtures/data/.index/**
 
 # OS / editor cruft
 .DS_Store

@@ -371,13 +371,26 @@ our only gate made this a merge-first prerequisite):
 
 ---
 
-## 10. MCP connector endpoint — OAuth 2.1  🚧 (Phase 2 — built, not yet deployed; MCP_ENABLED=false on the box)
+## 10. MCP connector endpoint — OAuth 2.1  ✅ (Phase 3 — live; IP-literal URL + full OAuth flow VERIFIED with claude.ai 2026-07-31)
 
-**What it is:** a remote MCP server inside the app (`POST /vault/api/mcp`) exposing ONE
-read-only tool, `search_vault(query)` — embed the query, cosine-search the existing vector
-index, return chunk excerpts + citations. Built so Claude.ai can connect as a custom
-connector. Retrieval only: no Gemini answer step, and no code path that writes to
+**What it is:** a remote MCP server inside the app (`POST /vault/api/mcp`) exposing THREE
+strictly read-only tools: `search_vault(query, count?)` (embed → cosine-search → excerpts
+with citations + `path:` lines), `list_files(path?)` (Browse's own listing, containment
+and dotfile-hiding inherited from catalog.ts), and `get_document(path)` (a document's
+chunks FROM THE INDEX in page/slide order — never the filesystem, no parsers on the box;
+40k-char cap with an explicit chunk-boundary truncation marker). Built so Claude.ai can
+connect as a custom connector. No Gemini answer step, and no code path that writes to
 `/data/docs` or the index exists behind this endpoint at all.
+
+**Two scopes, both read-only:** `search` (search_vault) and `read`
+(list_files/get_document), enforced PER TOOL — the route hands the verified token's
+scopes to the tool handlers as authInfo; a token without the needed scope gets a
+reconnect hint, so pre-`read` connections degrade gracefully until re-consented. The
+consent page enumerates both grants. `get_document`'s path handling is two guards deep:
+index MEMBERSHIP is the primary containment (an index lookup can't traverse), and the
+single fs touch (Browse's already-guarded resolveFile) exists only to distinguish
+"browse-only file" (Excel / un-OCR'd image PDFs — excluded from ingestion) from "no such
+file".
 
 **Auth is OAuth 2.1, and we are both halves.** Claude's custom connectors only speak
 OAuth (a Phase 1 `static_headers` probe was unavailable on this plan), so the app is now

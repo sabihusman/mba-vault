@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 // Relative imports — vitest has no "@/" alias (repo convention).
-import { searchVault, formatHits, validateQuery, MAX_QUERY_CHARS, type SearchVaultDeps } from "./search-vault";
+import {
+  searchVault,
+  formatHits,
+  validateQuery,
+  clampCount,
+  MAX_QUERY_CHARS,
+  MCP_TOP_K,
+  MCP_MAX_K,
+  type SearchVaultDeps,
+} from "./search-vault";
 import type { ChunkMeta, LoadedIndex } from "../ask/index-store";
 
 // A tiny 2-dim fake index: two orthogonal unit vectors, so which chunk wins is
@@ -71,15 +80,33 @@ describe("validateQuery", () => {
 });
 
 describe("formatHits", () => {
-  it("numbers hits with citation labels and scores", async () => {
+  it("numbers hits with citation labels, scores, and get_document-ready paths", async () => {
     const hits = await searchVault(deps([1, 0]), "positioning", 2);
     const text = formatHits(hits);
     expect(text).toContain("[1] Marketing / deck.pptx (slide 12) (score 1.000)");
+    expect(text).toContain("path: Marketing/deck.pptx");
     expect(text).toContain("[2] Finance / notes.pdf (p. 3)");
+    expect(text).toContain("path: Finance/notes.pdf");
     expect(text).toContain("owning a space");
   });
 
   it("says so when nothing matched", () => {
     expect(formatHits([])).toBe("No matching coursework found.");
+  });
+});
+
+describe("clampCount", () => {
+  it("defaults to 8 for absent or garbage values", () => {
+    expect(clampCount(undefined)).toBe(MCP_TOP_K);
+    expect(clampCount(NaN)).toBe(MCP_TOP_K);
+    expect(clampCount("12")).toBe(MCP_TOP_K);
+  });
+
+  it("clamps to [1, 20] and floors fractions", () => {
+    expect(clampCount(12)).toBe(12);
+    expect(clampCount(0)).toBe(1);
+    expect(clampCount(-5)).toBe(1);
+    expect(clampCount(50)).toBe(MCP_MAX_K);
+    expect(clampCount(3.9)).toBe(3);
   });
 });

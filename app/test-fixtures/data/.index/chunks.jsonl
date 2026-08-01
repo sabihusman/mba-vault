@@ -1,0 +1,4 @@
+{"id":"fx-notes-p2","course":"Course A","file":"Course A/Week 1/notes.pdf","loc":{"kind":"page","index":2},"text":"SYNTHETIC FIXTURE page two: the imaginary widget factory tracks three made-up metrics."}
+{"id":"fx-intro","course":"Course A","file":"Course A/intro.txt","loc":{"kind":"file"},"text":"SYNTHETIC FIXTURE intro: this text exists only for e2e tests and describes nothing real."}
+{"id":"fx-notes-p1","course":"Course A","file":"Course A/Week 1/notes.pdf","loc":{"kind":"page","index":1},"text":"SYNTHETIC FIXTURE page one: welcome to the entirely fictional course on widget economics."}
+{"id":"fx-notes-p3","course":"Course A","file":"Course A/Week 1/notes.pdf","loc":{"kind":"page","index":3},"text":"SYNTHETIC FIXTURE page three: the fictional case study concludes with an invented lesson."}

@@ -8,7 +8,7 @@
 // redirect; worse, it can carry a code. Only a validated redirect_uri may
 // receive error callbacks.
 import { getClient, redirectUriMatches, type OAuthClientRecord } from "./clients";
-import { SCOPE } from "./config";
+import { SCOPES, allScopes } from "./config";
 
 export interface RawAuthorizeParams {
   client_id?: string;
@@ -64,11 +64,13 @@ export async function validateAuthorizeRequest(params: RawAuthorizeParams): Prom
     // PKCE S256 is mandatory here (MCP authorization spec) — no challenge, no code.
     return { kind: "redirect_error", redirectUri: redirect_uri, error: "invalid_request", state };
   }
-  // Only our one scope exists; an empty/absent scope defaults to it.
+  // Requested scopes must be a subset of ours; empty/absent defaults to all
+  // (both are read-only — there is no privilege difference worth a prompt).
   const requested = (params.scope ?? "").split(/\s+/).filter(Boolean);
-  if (requested.some((s) => s !== SCOPE)) {
+  if (requested.some((s) => !SCOPES.includes(s))) {
     return { kind: "redirect_error", redirectUri: redirect_uri, error: "invalid_scope", state };
   }
+  const scope = requested.length > 0 ? requested.join(" ") : allScopes();
 
   return {
     kind: "ok",
@@ -76,7 +78,7 @@ export async function validateAuthorizeRequest(params: RawAuthorizeParams): Prom
     redirectUri: redirect_uri,
     state,
     codeChallenge: params.code_challenge,
-    scope: SCOPE,
+    scope,
   };
 }
 

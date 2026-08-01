@@ -17,9 +17,10 @@ public internet behind self-managed auth. Features:
 2. **Ask** — RAG: retrieve index chunks → Gemini → streamed answer with citations.
 3. **Staleness Detector** — a bounded agent loop that checks key coursework concepts
    against current web sources twice a year and writes a report (never the corpus).
-4. **MCP connector** *(built, not yet deployed)* — a remote MCP server exposing one
-   read-only tool, `search_vault(query)`, secured by a self-built OAuth 2.1
-   authorization server, so Claude.ai can connect as a custom connector.
+4. **MCP connector** *(live — IP-literal URL + OAuth flow VERIFIED with claude.ai
+   2026-07-31)* — a remote MCP server exposing three read-only tools
+   (`search_vault`, `list_files`, `get_document`), secured by a self-built OAuth 2.1
+   authorization server with two read-only scopes (`search`, `read`).
 
 ## 2. Hard constraints (binding)
 
@@ -176,16 +177,21 @@ store, worst-first accordion, distinct "ungrounded" vs "no external match" badge
 Known API trap: `googleSearch` + `responseSchema` silently stops grounding — the loop
 parses delimited text instead.
 
-### MCP connector (Phases 1–2 built; Phases 3–4 pending)
-`search_vault(query)`: embed → cosine over the existing index → top-8 chunks with
-`Course / file (p. N | slide N)` citations. Reuses Ask's retrieval verbatim; **no Gemini
-answer step**. Served via `createMcpHandler` (v2 SDK, stateless per-request, web-standard
-`fetch(Request) → Response` in a three-line route handler; the SDK does no token
-verification — ours lives in the proxy). Auth as in §6. Phase 1's `static_headers` smoke
-test was unavailable on the owner's claude.ai plan, so the **IP-literal connector URL
-question is still UNVERIFIED** — it resolves at the first live OAuth connect (Phase 3);
-fallback if rejected: free DuckDNS subdomain + standard Let's Encrypt cert via the
-existing lego pipeline (decided, unbuilt).
+### MCP connector (live; file-access tools in review)
+Three read-only tools, per-tool scope enforcement (`search` / `read`, via authInfo
+pass-through — the SDK does no verification of its own; reachability auth lives in the
+proxy):
+- `search_vault(query, count?)`: embed → cosine → top-N (default 8, clamped ≤20) chunks
+  with citations and `path:` lines that feed `get_document`.
+- `list_files(path?)`: Browse's `listDirectory` verbatim (containment inherited).
+- `get_document(path)`: the file's index chunks in page/slide order — never the
+  filesystem, no parsers on the box; 40k-char cap, explicit truncation marker;
+  on-disk-but-unindexed files (Excel, un-OCR'd image PDFs) get a distinct browse-only
+  response instead of an error.
+Served via `createMcpHandler` (v2 SDK, stateless per-request, web-standard fetch).
+**VERIFIED 2026-07-31**: IP-literal HTTPS URL + the whole self-hosted OAuth flow work
+with claude.ai end-to-end; the DuckDNS fallback is retired unbuilt. E2E runs against a
+committed 4-chunk SYNTHETIC fixture index (no real course content in the public repo).
 
 ## 9. CI/CD & environments
 
@@ -239,11 +245,9 @@ Removed: `MCP_STATIC_TOKEN` (Phase 1 scaffolding, deleted with the OAuth switch)
 
 ## 13. Roadmap
 
-- **MCP Phase 3 — deploy + connect**: nginx `.well-known` mapping, `PUBLIC_ORIGIN` +
-  `MCP_ENABLED=true` on the box, live claude.ai OAuth connect (which finally answers the
-  IP-literal question; DuckDNS fallback ready if it fails).
 - **MCP Phase 4 — harden + document**: token expiry/revocation review, DCR abuse
-  surface, logging with **no chunk content in logs**, session log.
+  surface, logging with **no chunk content in logs**, session log. (Phase 3 is done —
+  connector live, session log at `docs/session-logs/SESSION-LOG-2026-07-31.md`.)
 - **LangSmith tracing** for the staleness loop — researched and planned (metadata-only
   spans, `langsmith@^0.8.7`, off by default); awaiting go-ahead.
 - **Phase B — gap-filler/tutor loop** (planning): human-in-the-loop line map + Tier-1

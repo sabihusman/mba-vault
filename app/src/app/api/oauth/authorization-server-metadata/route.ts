@@ -9,7 +9,7 @@ import {
   issuer,
   registrationEndpoint,
   tokenEndpoint,
-  SCOPE,
+  SCOPES,
 } from "@/lib/oauth/config";
 
 export async function GET(): Promise<Response> {
@@ -25,7 +25,7 @@ export async function GET(): Promise<Response> {
       token_endpoint_auth_methods_supported: ["none"],
       // Mandatory advertisement per the MCP authorization spec.
       code_challenge_methods_supported: ["S256"],
-      scopes_supported: [SCOPE],
+      scopes_supported: [...SCOPES],
     },
     { headers: { "Cache-Control": "no-store" } },
   );
