@@ -131,6 +131,36 @@ export async function verifyAccessToken(token: string, now: Date): Promise<Verif
   return { clientId: record.clientId, scope: record.scope };
 }
 
+/** RFC 7009 revocation: delete the presented token wherever it lives. Checks
+ *  BOTH maps (the spec's token_type_hint is just a hint, and our prefixes make
+ *  the type unambiguous anyway). Deliberately returns nothing — per the RFC,
+ *  revoking an unknown/expired/garbage token is indistinguishable from
+ *  success, so callers can't probe the store through this path. The write
+ *  also prunes expired records (F4, free here). */
+export async function revokeToken(token: string): Promise<void> {
+  if (!token.startsWith("mcp_at_") && !token.startsWith("mcp_rt_")) return;
+  const key = digest(token);
+  await serialized("tokens", async () => {
+    const file = await readTokensFile();
+    if (!(key in file.access) && !(key in file.refresh)) return; // nothing to do, skip the write
+    delete file.access[key];
+    delete file.refresh[key];
+    await writeTokensFile(file, new Date());
+  });
+}
+
+/** Client ids that still hold an unexpired refresh token — i.e. connections
+ *  that can come back. Used by DCR eviction to avoid evicting a LIVE client
+ *  under registration churn. */
+export async function clientIdsWithLiveRefreshTokens(now: Date): Promise<Set<string>> {
+  const file = await readTokensFile();
+  const live = new Set<string>();
+  for (const record of Object.values(file.refresh)) {
+    if (record.expiresAt > now.toISOString()) live.add(record.clientId);
+  }
+  return live;
+}
+
 /** Stable per-token key for rate limiting: a digest PREFIX, never the token. */
 export function tokenRateKey(token: string): string {
   return digest(token).slice(0, 16);

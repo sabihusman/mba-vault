@@ -444,14 +444,56 @@ placement (the route handler is unreachable without auth by construction).
    are still NOT accepted on the MCP path (machine and human auth planes stay disjoint),
    and an MCP token opens no other path.
 
+**Phase 4 hardening (2026-08-01 audit → fixes):**
+- **Revocation (RFC 7009):** `POST /vault/api/oauth/revoke` (form-urlencoded, `token=`),
+  advertised as `revocation_endpoint`. Idempotent 200 whether or not the token existed —
+  revocation must not be a store-probing oracle. Kills access AND refresh tokens by
+  digest. **UNVERIFIED whether claude.ai calls it on disconnect** — observable: watch
+  nginx logs during the next disconnect. Manual kill either way:
+  `curl -sk -X POST https://<ip>/vault/api/oauth/revoke -H "Content-Type: application/x-www-form-urlencoded" -d "token=<mcp_at_… or mcp_rt_…>"`
+- **DCR eviction protects the live connection:** past the 20-client cap, clients still
+  holding an unexpired refresh token are evicted last — registration churn (rate-limited
+  5/hr/IP) can't displace the connection in use. Note: tokens deliberately survive their
+  client's eviction (verification never re-checks client existence); acceptable for
+  read-only scopes, revocable at any time.
+- **Generic tool errors:** unexpected exceptions in tool handlers return "internal
+  error — try again", never the raw message (an SDK/Gemini error string could carry
+  request detail), and log nothing.
+- **Rate-limit reasoning (why get_document shares the 30/5 min bucket):** the cost
+  asymmetry is inverted — `search_vault` is the expensive tool (one Gemini embedding per
+  call); `list_files`/`get_document` are pure local reads, worst case ~1.2 MB per window.
+  One per-token bucket caps the only real budget (Gemini spend) and the bandwidth is
+  noise.
+- **nginx log exposure:** authorize-URL query params (`client_id`, `state`,
+  `code_challenge`) appear in `access.log` — all non-secret by design (the challenge is
+  a hash; the code travels in an unlogged redirect Location; the verifier and all POST
+  bodies never appear).
+- **After a refresh rotation,** the previous ACCESS token stays valid until its ≤1 h
+  expiry (standard OAuth); revoke it explicitly if that hour matters.
+- **Kill-switch drill (verified):** set `MCP_ENABLED=false` in `/opt/mba-vault/.env` →
+  `cd /opt/mba-vault && sudo docker compose up -d --force-recreate app` →
+  `curl -sk -o /dev/null -w "%{http_code}" -X POST https://127.0.0.1/vault/api/mcp` →
+  `404` — including with a valid token presented (the switch is checked before any auth;
+  unit-proven in proxy-mcp.test.ts). The OAuth AS endpoints stay up; revoke tokens too
+  if you're killing the connector for cause.
+- **Six-bounds mapping** (course framework → this passive server): max-iterations → N/A
+  (no loop; the per-token rate limit bounds the caller instead) · cost cap → the same
+  rate limit (embedding is the only spend; no LLM generation on this path) · timeout →
+  per-request platform defaults only (local index reads; N/A by architecture) · HITL →
+  the consent flow (login + TOTP per connection) + read-only tool set · JIT permissions
+  → the `search`/`read` scope split, enforced per tool · kill switch → `MCP_ENABLED`,
+  pre-auth, fail-closed.
+
 **How to verify:** unit tests cover PKCE (incl. the RFC 7636 test vector), the
 redirect-URI allowlist (incl. port-agnostic loopback), code single-use/expiry/binding,
 token hashing-at-rest (the test greps the state file for the raw token), refresh
-rotation, kill switch, cookie-not-accepted, and the 429. E2E runs the whole flow over
+rotation, revocation (both token types + the no-oracle property), live-client eviction
+protection, kill switch, cookie-not-accepted, and the 429. E2E runs the whole flow over
 real HTTP: register → consent → code → exchange → authenticated MCP `initialize` →
-rotation → replayed-code and wrong-verifier failures. On the box: `curl -k -X POST
-https://<ip>/vault/api/mcp` → `404` flag-off / `401`+`WWW-Authenticate` flag-on, and the
-metadata endpoints serve JSON unauthenticated.
+rotation → replayed-code and wrong-verifier failures → revoke → immediate 401 →
+idempotent re-revoke. On the box: `curl -k -X POST https://<ip>/vault/api/mcp` → `404`
+flag-off / `401`+`WWW-Authenticate` flag-on, and the metadata endpoints serve JSON
+unauthenticated.
 
 ---
 

@@ -9,6 +9,7 @@ import {
   getClient,
   MAX_CLIENTS,
 } from "./clients";
+import { mintTokenPair } from "./tokens";
 
 const HOSTED = "https://claude.ai/api/mcp/auth_callback";
 
@@ -98,6 +99,30 @@ describe("registerClient", () => {
       if (r.ok && i === 0) firstId = r.client.clientId;
     }
     expect(await getClient(firstId)).toBeNull();
+  });
+
+  it("Phase 4 (F2): eviction skips the client that holds a live refresh token", async () => {
+    // Oldest client is the LIVE one (has an unexpired refresh token).
+    const oldest = await registerClient(
+      { redirect_uris: [HOSTED], client_name: "live" },
+      new Date(Date.UTC(2026, 0, 1)),
+    );
+    if (!oldest.ok) throw new Error("fixture registration failed");
+    await mintTokenPair(oldest.client.clientId, "search read", new Date(Date.UTC(2026, 0, 1)));
+
+    // Churn: fill past the cap with throwaway registrations.
+    let secondOldestId = "";
+    for (let i = 0; i <= MAX_CLIENTS; i++) {
+      const r = await registerClient(
+        { redirect_uris: [HOSTED], client_name: `churn${i}` },
+        new Date(Date.UTC(2026, 0, 2, 0, 0, i)),
+      );
+      if (r.ok && i === 0) secondOldestId = r.client.clientId;
+    }
+
+    // The live client survived; the oldest NON-live registration was evicted.
+    expect(await getClient(oldest.client.clientId)).not.toBeNull();
+    expect(await getClient(secondOldestId)).toBeNull();
   });
 
   it("stores no secrets: the state file holds only public client metadata", async () => {

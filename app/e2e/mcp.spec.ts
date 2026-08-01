@@ -240,6 +240,24 @@ test("full flow: register → consent → code → PKCE exchange → MCP initial
   expect(replayOld.status()).toBe(400);
   expect(((await replayOld.json()) as { error: string }).error).toBe("invalid_grant");
 
+  // RFC 7009 revocation (Phase 4): revoking the rotated access token kills it
+  // at the MCP gate immediately; revoking again is still 200 (idempotent).
+  const revoke = await request.post("/vault/api/oauth/revoke", {
+    headers: { "content-type": "application/x-www-form-urlencoded", "x-real-ip": syntheticIp() },
+    form: { token: rotated.access_token },
+  });
+  expect(revoke.status()).toBe(200);
+  const afterRevoke = await request.post(MCP_URL, {
+    headers: { authorization: `Bearer ${rotated.access_token}` },
+    data: INITIALIZE,
+  });
+  expect(afterRevoke.status()).toBe(401);
+  const revokeAgain = await request.post("/vault/api/oauth/revoke", {
+    headers: { "content-type": "application/x-www-form-urlencoded", "x-real-ip": syntheticIp() },
+    form: { token: rotated.access_token },
+  });
+  expect(revokeAgain.status()).toBe(200);
+
   await context.close();
 });
 
