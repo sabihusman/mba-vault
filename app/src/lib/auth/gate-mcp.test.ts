@@ -1,13 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 // Relative imports — vitest has no "@/" alias (repo convention).
-import { hasValidMcpToken, isMcpEnabled, MCP_PATH } from "./gate";
-
-// Clearly-fake fixture value (public repo — nothing realistic).
-const TOKEN = "unit-test-mcp-token-not-a-real-secret";
+import { bearerToken, isMcpEnabled, isPublicPath } from "./gate";
 
 afterEach(() => {
   delete process.env.MCP_ENABLED;
-  delete process.env.MCP_STATIC_TOKEN;
 });
 
 describe("isMcpEnabled", () => {
@@ -22,33 +18,30 @@ describe("isMcpEnabled", () => {
   });
 });
 
-describe("hasValidMcpToken", () => {
-  it("accepts a correct Bearer header on the MCP path only", () => {
-    process.env.MCP_STATIC_TOKEN = TOKEN;
-    expect(hasValidMcpToken(MCP_PATH, `Bearer ${TOKEN}`)).toBe(true);
-    expect(hasValidMcpToken("/api/ask", `Bearer ${TOKEN}`)).toBe(false);
-    expect(hasValidMcpToken("/", `Bearer ${TOKEN}`)).toBe(false);
+describe("bearerToken", () => {
+  it("extracts the token, case-insensitive scheme", () => {
+    expect(bearerToken("Bearer abc")).toBe("abc");
+    expect(bearerToken("bearer abc")).toBe("abc");
   });
 
-  it('accepts a case-insensitive "bearer" scheme (HTTP auth schemes are case-insensitive)', () => {
-    process.env.MCP_STATIC_TOKEN = TOKEN;
-    expect(hasValidMcpToken(MCP_PATH, `bearer ${TOKEN}`)).toBe(true);
+  it("returns null for other schemes, bare values, and empty headers", () => {
+    expect(bearerToken("Basic abc")).toBeNull();
+    expect(bearerToken("abc")).toBeNull();
+    expect(bearerToken("")).toBeNull();
+    expect(bearerToken(null)).toBeNull();
+    expect(bearerToken(undefined)).toBeNull();
   });
+});
 
-  it("rejects wrong tokens, bare tokens, other schemes, and empty headers", () => {
-    process.env.MCP_STATIC_TOKEN = TOKEN;
-    expect(hasValidMcpToken(MCP_PATH, "Bearer wrong")).toBe(false);
-    expect(hasValidMcpToken(MCP_PATH, TOKEN)).toBe(false);
-    expect(hasValidMcpToken(MCP_PATH, `Basic ${TOKEN}`)).toBe(false);
-    expect(hasValidMcpToken(MCP_PATH, "")).toBe(false);
-    expect(hasValidMcpToken(MCP_PATH, null)).toBe(false);
-    expect(hasValidMcpToken(MCP_PATH, undefined)).toBe(false);
-  });
-
-  it("never falls open: unset or empty MCP_STATIC_TOKEN rejects everything", () => {
-    expect(hasValidMcpToken(MCP_PATH, "Bearer anything")).toBe(false);
-    process.env.MCP_STATIC_TOKEN = "";
-    expect(hasValidMcpToken(MCP_PATH, "Bearer ")).toBe(false);
-    expect(hasValidMcpToken(MCP_PATH, "Bearer anything")).toBe(false);
+describe("OAuth public-path surface", () => {
+  it("metadata/register/token are public; consent and MCP are NOT", () => {
+    expect(isPublicPath("/api/oauth/protected-resource-metadata")).toBe(true);
+    expect(isPublicPath("/api/oauth/authorization-server-metadata")).toBe(true);
+    expect(isPublicPath("/api/oauth/register")).toBe(true);
+    expect(isPublicPath("/api/oauth/token")).toBe(true);
+    // Consent must ride the session; the MCP path has its own token gate.
+    expect(isPublicPath("/oauth/authorize")).toBe(false);
+    expect(isPublicPath("/api/oauth/decision")).toBe(false);
+    expect(isPublicPath("/api/mcp")).toBe(false);
   });
 });

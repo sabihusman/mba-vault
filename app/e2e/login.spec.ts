@@ -6,7 +6,7 @@ import { test, expect } from "@playwright/test";
 
 test("gate redirects an unauthenticated visitor to the login page", async ({ page }) => {
   await page.goto("/vault");
-  await expect(page).toHaveURL(/\/vault\/login$/);
+  await expect(page).toHaveURL(/\/vault\/login(\?next=.*)?$/);
 });
 
 test("login page renders the heading and all three credential fields", async ({ page }) => {

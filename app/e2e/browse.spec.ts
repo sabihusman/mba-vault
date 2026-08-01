@@ -118,7 +118,7 @@ test("the gate still blocks browse without a session", async ({ browser }) => {
   try {
     const page = await fresh.newPage();
     await page.goto("/vault/browse");
-    await expect(page).toHaveURL(/\/vault\/login$/);
+    await expect(page).toHaveURL(/\/vault\/login(\?next=.*)?$/);
   } finally {
     await fresh.close();
   }

@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 // NOT basePath-aware (unlike next/navigation's router), so we spell the full path.
 const LOGIN_ENDPOINT = "/vault/api/login";
 
-export function LoginForm() {
+export function LoginForm({ nextPath = "/" }: { nextPath?: string }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -37,7 +37,8 @@ export function LoginForm() {
       if (res.ok) {
         // router is basePath-aware, so "/" resolves to /vault. replace() so the
         // login page isn't left in history behind the authenticated app.
-        router.replace("/");
+        // nextPath was validated server-side (safeNextPath) — app-internal only.
+        router.replace(nextPath);
         return;
       }
 
