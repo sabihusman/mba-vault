@@ -4,7 +4,7 @@
 // nginx additionally maps the root RFC probe paths
 // (/.well-known/oauth-protected-resource[/vault/api/mcp]) onto this route.
 import { NextResponse } from "next/server";
-import { issuer, mcpResourceUrl, SCOPE } from "@/lib/oauth/config";
+import { issuer, mcpResourceUrl, SCOPES } from "@/lib/oauth/config";
 
 export async function GET(): Promise<Response> {
   return NextResponse.json(
@@ -13,7 +13,7 @@ export async function GET(): Promise<Response> {
       resource: mcpResourceUrl(),
       // First entry wins in Claude's resolution; we only have one.
       authorization_servers: [issuer()],
-      scopes_supported: [SCOPE],
+      scopes_supported: [...SCOPES],
       bearer_methods_supported: ["header"],
     },
     { headers: { "Cache-Control": "no-store" } },

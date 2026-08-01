@@ -18,8 +18,19 @@ export function issuer(): string {
   return `${publicOrigin()}/vault`;
 }
 
-/** The one scope this AS knows: read-only vault search. */
-export const SCOPE = "search";
+/** The scopes this AS knows — both strictly read-only:
+ *  - "search": semantic search over the index (search_vault)
+ *  - "read":   list files + read documents from the index (list_files,
+ *              get_document) — added with the file-access tools; existing
+ *              connections hold only "search" until re-consented. */
+export const SCOPE_SEARCH = "search";
+export const SCOPE_READ = "read";
+export const SCOPES: readonly string[] = [SCOPE_SEARCH, SCOPE_READ];
+
+/** All scopes as the space-delimited OAuth scope string. */
+export function allScopes(): string {
+  return SCOPES.join(" ");
+}
 
 export function mcpResourceUrl(): string {
   return `${issuer()}/api/mcp`;
@@ -42,7 +53,8 @@ export function registrationEndpoint(): string {
 }
 
 /** The WWW-Authenticate challenge on every MCP 401 — Claude's primary path for
- *  discovering where our protected-resource metadata lives. */
+ *  discovering where our protected-resource metadata lives. The scope param
+ *  controls which scopes Claude requests (Claude connector auth docs). */
 export function bearerChallenge(): string {
-  return `Bearer resource_metadata="${protectedResourceMetadataUrl()}", scope="${SCOPE}"`;
+  return `Bearer resource_metadata="${protectedResourceMetadataUrl()}", scope="${allScopes()}"`;
 }

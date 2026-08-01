@@ -70,10 +70,25 @@ export default async function AuthorizePage({
       <div>
         <h1 className="font-serif text-[22px] font-bold text-tx">Authorize access</h1>
         <p className="mt-1 text-sm text-tx2">
-          <span className="font-medium text-tx">{validation.client.clientName}</span> is asking for{" "}
-          <span className="font-medium text-tx">read-only search</span> access to your vault
-          (tool: <code>search_vault</code>). It can’t read whole files, write anything, or see
-          your Ask history.
+          <span className="font-medium text-tx">{validation.client.clientName}</span> is asking for
+          read-only access to your vault:
+        </p>
+        <ul className="mt-1 list-inside list-disc text-sm text-tx2">
+          {validation.scope.split(" ").includes("search") && (
+            <li>
+              <span className="font-medium text-tx">search</span> — semantic search over the
+              coursework index (<code>search_vault</code>)
+            </li>
+          )}
+          {validation.scope.split(" ").includes("read") && (
+            <li>
+              <span className="font-medium text-tx">read</span> — list files and read documents
+              from the index (<code>list_files</code>, <code>get_document</code>)
+            </li>
+          )}
+        </ul>
+        <p className="mt-1 text-sm text-tx2">
+          It can’t write anything, download raw files, or see your Ask history.
         </p>
         {/* The MCP auth spec requires showing the redirect host on consent —
             it's the one honest signal of where the code will be sent. */}

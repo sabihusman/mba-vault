@@ -67,14 +67,23 @@ describe("validateAuthorizeRequest", () => {
     ).toMatchObject({ kind: "redirect_error", error: "invalid_request" });
   });
 
-  it("unknown scopes → invalid_scope; empty scope defaults to search", async () => {
+  it("unknown scopes → invalid_scope; subsets pass; empty defaults to all scopes", async () => {
     expect(await validateAuthorizeRequest({ ...valid(), scope: "admin" })).toMatchObject({
       kind: "redirect_error",
       error: "invalid_scope",
     });
+    expect(await validateAuthorizeRequest({ ...valid(), scope: "search write" })).toMatchObject({
+      kind: "redirect_error",
+      error: "invalid_scope",
+    });
+    const subset = await validateAuthorizeRequest({ ...valid(), scope: "read" });
+    expect(subset.kind).toBe("ok");
+    if (subset.kind === "ok") expect(subset.scope).toBe("read");
+    const both = await validateAuthorizeRequest({ ...valid(), scope: "search read" });
+    if (both.kind === "ok") expect(both.scope).toBe("search read");
     const v = await validateAuthorizeRequest({ ...valid(), scope: undefined });
     expect(v.kind).toBe("ok");
-    if (v.kind === "ok") expect(v.scope).toBe("search");
+    if (v.kind === "ok") expect(v.scope).toBe("search read");
   });
 });
 

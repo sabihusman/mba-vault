@@ -64,7 +64,7 @@ async function approveAndGetCode(
       state: "e2e-state",
       code_challenge: challenge,
       code_challenge_method: "S256",
-      scope: "search",
+      scope: "search read",
       action: "approve",
     },
   });
@@ -90,6 +90,8 @@ test("metadata endpoints are public and consistent", async ({ request }) => {
   expect(asmBody.issuer).toBe(prmBody.authorization_servers[0]);
   expect(asmBody.code_challenge_methods_supported).toEqual(["S256"]);
   expect(asmBody.token_endpoint_auth_methods_supported).toEqual(["none"]);
+  // Both read-only scopes are advertised (Claude requests what PRM lists).
+  expect(asmBody.scopes_supported).toEqual(["search", "read"]);
 });
 
 test("MCP 401s carry the WWW-Authenticate discovery challenge", async ({ request }) => {
@@ -126,10 +128,14 @@ test("full flow: register → consent → code → PKCE exchange → MCP initial
   const page = await context.newPage();
   await page.goto(
     `/vault/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(HOSTED_CALLBACK)}` +
-      `&response_type=code&state=e2e-state&code_challenge=${challenge}&code_challenge_method=S256&scope=search`,
+      `&response_type=code&state=e2e-state&code_challenge=${challenge}&code_challenge_method=S256` +
+      `&scope=${encodeURIComponent("search read")}`,
   );
   await expect(page.getByRole("button", { name: "Approve" })).toBeVisible();
   await expect(page.getByText("claude.ai")).toBeVisible(); // redirect host shown
+  // Consent copy reflects both read-only grants (spec: consent must show 'read').
+  await expect(page.getByText("semantic search over the coursework index")).toBeVisible();
+  await expect(page.getByText("list files and read documents")).toBeVisible();
 
   const code = await approveAndGetCode(context, clientId, challenge);
 
@@ -149,9 +155,11 @@ test("full flow: register → consent → code → PKCE exchange → MCP initial
     access_token: string;
     refresh_token: string;
     token_type: string;
+    scope: string;
   };
   expect(tokens.token_type).toBe("Bearer");
   expect(tokens.access_token).toMatch(/^mcp_at_/);
+  expect(tokens.scope).toBe("search read");
 
   // Reusing the code fails — single use.
   const reuse = await request.post("/vault/api/oauth/token", {
@@ -177,6 +185,44 @@ test("full flow: register → consent → code → PKCE exchange → MCP initial
   });
   expect(mcp.status()).toBe(200);
   expect(await mcp.text()).toContain("mba-vault");
+
+  // Tool calls against the committed SYNTHETIC fixture index + browse fixtures
+  // (search_vault itself isn't callable here — no GEMINI_API_KEY in e2e).
+  const call = async (name: string, args: Record<string, unknown>) => {
+    const res = await request.post(MCP_URL, {
+      headers: {
+        authorization: `Bearer ${tokens.access_token}`,
+        accept: "application/json, text/event-stream",
+      },
+      data: {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name, arguments: args },
+      },
+    });
+    expect(res.status(), `${name} HTTP status`).toBe(200);
+    return res.text();
+  };
+
+  // list_files at the root shows the fixture course folders.
+  const rootListing = await call("list_files", {});
+  expect(rootListing).toContain("Course A");
+  expect(rootListing).toContain("Course B");
+
+  // get_document reassembles the synthetic fixture pages in document order.
+  const doc = await call("get_document", { path: "Course A/Week 1/notes.pdf" });
+  expect(doc).toContain("page one");
+  expect(doc).toContain("— page 1 —");
+  expect(doc.indexOf("page one")).toBeLessThan(doc.indexOf("page two"));
+
+  // Browse-only distinction: the xlsx exists on disk but isn't in the index.
+  const xlsx = await call("get_document", { path: "Course B/budget.xlsx" });
+  expect(xlsx).toContain("browse/download-only");
+
+  // Nonexistent file: a real error pointing at list_files.
+  const ghost = await call("get_document", { path: "Course Z/ghost.pdf" });
+  expect(ghost).toContain("No such file");
 
   // Refresh rotation: new pair works, old refresh token is dead.
   const refreshRes = await request.post("/vault/api/oauth/token", {
