@@ -48,6 +48,18 @@ function missingScope(scopes: string[] | undefined, required: string): ToolResul
   );
 }
 
+/** Phase 4 (F5): unexpected failures return GENERIC text. A raw exception
+ *  message (e.g. a Gemini SDK error) could carry request/config detail we
+ *  never want surfaced or logged — and per the logging rule, nothing is
+ *  console.*'d here either. */
+async function guarded(run: () => Promise<ToolResult>): Promise<ToolResult> {
+  try {
+    return await run();
+  } catch {
+    return text("The tool hit an internal error — try again.", true);
+  }
+}
+
 function buildServer(): McpServer {
   const server = new McpServer({ name: "mba-vault", version: "1.1.0" });
 
@@ -71,21 +83,22 @@ function buildServer(): McpServer {
           .describe(`How many results to return (default 8, clamped to 1–${MCP_MAX_K}).`),
       },
     },
-    async ({ query, count }, ctx) => {
-      const denied = missingScope(ctx.http?.authInfo?.scopes, SCOPE_SEARCH);
-      if (denied) return denied;
-      const invalid = validateQuery(query);
-      if (invalid) return text(`Invalid query: ${invalid}`, true);
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) return text("Search is not configured (no embedding key).", true);
-      const gemini = createGeminiClient(apiKey);
-      const hits = await searchVault(
-        { getIndex, embedQuery: (q) => gemini.embedQuery(q) },
-        query,
-        clampCount(count),
-      );
-      return text(formatHits(hits));
-    },
+    async ({ query, count }, ctx) =>
+      guarded(async () => {
+        const denied = missingScope(ctx.http?.authInfo?.scopes, SCOPE_SEARCH);
+        if (denied) return denied;
+        const invalid = validateQuery(query);
+        if (invalid) return text(`Invalid query: ${invalid}`, true);
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) return text("Search is not configured (no embedding key).", true);
+        const gemini = createGeminiClient(apiKey);
+        const hits = await searchVault(
+          { getIndex, embedQuery: (q) => gemini.embedQuery(q) },
+          query,
+          clampCount(count),
+        );
+        return text(formatHits(hits));
+      }),
   );
 
   server.registerTool(
@@ -103,12 +116,13 @@ function buildServer(): McpServer {
           .describe('Forward-slash relative folder path, e.g. "Course A/Week 1". Omit for the root.'),
       },
     },
-    async ({ path }, ctx) => {
-      const denied = missingScope(ctx.http?.authInfo?.scopes, SCOPE_READ);
-      if (denied) return denied;
-      const result = await listFiles({ listDirectory }, path);
-      return result.kind === "ok" ? text(result.text) : text(result.message, true);
-    },
+    async ({ path }, ctx) =>
+      guarded(async () => {
+        const denied = missingScope(ctx.http?.authInfo?.scopes, SCOPE_READ);
+        if (denied) return denied;
+        const result = await listFiles({ listDirectory }, path);
+        return result.kind === "ok" ? text(result.text) : text(result.message, true);
+      }),
   );
 
   server.registerTool(
@@ -127,20 +141,21 @@ function buildServer(): McpServer {
           .describe('A [file] path exactly as list_files or a search_vault `path:` line printed it.'),
       },
     },
-    async ({ path }, ctx) => {
-      const denied = missingScope(ctx.http?.authInfo?.scopes, SCOPE_READ);
-      if (denied) return denied;
-      const result = await getDocument({ getIndex, resolveFile }, path);
-      switch (result.kind) {
-        case "ok":
-          return text(result.text);
-        case "browse_only":
-          // Informative, not an error — the model should relay it, not retry.
-          return text(result.message);
-        case "not_found":
-          return text(result.message, true);
-      }
-    },
+    async ({ path }, ctx) =>
+      guarded(async () => {
+        const denied = missingScope(ctx.http?.authInfo?.scopes, SCOPE_READ);
+        if (denied) return denied;
+        const result = await getDocument({ getIndex, resolveFile }, path);
+        switch (result.kind) {
+          case "ok":
+            return text(result.text);
+          case "browse_only":
+            // Informative, not an error — the model should relay it, not retry.
+            return text(result.message);
+          case "not_found":
+            return text(result.message, true);
+        }
+      }),
   );
 
   return server;

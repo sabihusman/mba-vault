@@ -6,6 +6,8 @@ import {
   mintTokenPair,
   verifyAccessToken,
   rotateRefreshToken,
+  revokeToken,
+  clientIdsWithLiveRefreshTokens,
   tokenRateKey,
   ACCESS_TOKEN_TTL_SECONDS,
 } from "./tokens";
@@ -69,6 +71,39 @@ describe("refresh rotation (OAuth 2.1 public client)", () => {
     const pair = await mintTokenPair("c", "search", NOW);
     const past31Days = new Date(NOW.getTime() + 31 * 24 * 3600 * 1000);
     expect(await rotateRefreshToken(pair.refreshToken, past31Days)).toBeNull();
+  });
+});
+
+describe("revokeToken (RFC 7009)", () => {
+  it("revoking an access token kills it immediately", async () => {
+    const pair = await mintTokenPair("c", "search", NOW);
+    await revokeToken(pair.accessToken);
+    expect(await verifyAccessToken(pair.accessToken, NOW)).toBeNull();
+    // The refresh token is untouched — it was a different credential.
+    expect(await rotateRefreshToken(pair.refreshToken, NOW)).not.toBeNull();
+  });
+
+  it("revoking a refresh token kills rotation", async () => {
+    const pair = await mintTokenPair("c", "search", NOW);
+    await revokeToken(pair.refreshToken);
+    expect(await rotateRefreshToken(pair.refreshToken, NOW)).toBeNull();
+  });
+
+  it("unknown/garbage tokens revoke silently (no probing oracle)", async () => {
+    await expect(revokeToken("mcp_at_unknown")).resolves.toBeUndefined();
+    await expect(revokeToken("mcp_rt_unknown")).resolves.toBeUndefined();
+    await expect(revokeToken("garbage")).resolves.toBeUndefined();
+  });
+});
+
+describe("clientIdsWithLiveRefreshTokens", () => {
+  it("reports clients with unexpired refresh tokens only", async () => {
+    await mintTokenPair("live-client", "search", NOW);
+    const expired = await mintTokenPair("dead-client", "search", NOW);
+    await revokeToken(expired.refreshToken);
+    const live = await clientIdsWithLiveRefreshTokens(NOW);
+    expect(live.has("live-client")).toBe(true);
+    expect(live.has("dead-client")).toBe(false);
   });
 });
 

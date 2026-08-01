@@ -29,6 +29,7 @@ const PUBLIC_PATHS = new Set([
   "/api/oauth/authorization-server-metadata",
   "/api/oauth/register",
   "/api/oauth/token",
+  "/api/oauth/revoke", // RFC 7009 — the token presented is the credential
 ]);
 
 /** True for paths the gate must let through unauthenticated. */

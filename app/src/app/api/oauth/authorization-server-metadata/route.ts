@@ -19,6 +19,10 @@ export async function GET(): Promise<Response> {
       authorization_endpoint: authorizationEndpoint(),
       token_endpoint: tokenEndpoint(),
       registration_endpoint: registrationEndpoint(),
+      // RFC 7009. Whether claude.ai calls it on disconnect is UNVERIFIED
+      // (observable: nginx logs on the next disconnect); the owner's manual
+      // revoke curl works regardless (SECURITY.md §10).
+      revocation_endpoint: `${issuer()}/api/oauth/revoke`,
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code", "refresh_token"],
       // Claude registers as a public client (no secret) via DCR.

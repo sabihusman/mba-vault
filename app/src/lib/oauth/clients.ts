@@ -18,6 +18,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { getStateDir } from "../history/store";
 import { serialized } from "./serialize";
+import { clientIdsWithLiveRefreshTokens } from "./tokens";
 
 const MCP_DIR = "mcp";
 const CLIENTS_FILE = "clients.json";
@@ -139,13 +140,21 @@ export async function registerClient(request: RegistrationRequest, now: Date): P
 
   // Serialized: read→modify→write of the whole file must not interleave with a
   // concurrent registration or the earlier one silently vanishes.
+  const liveClients = await clientIdsWithLiveRefreshTokens(now);
   await serialized("clients", async () => {
     const file = await readClientsFile();
     file.clients.push(client);
     // Oldest-first eviction beyond the cap (createdAt is insertion order anyway,
-    // but sort defensively — the file is hand-editable state).
+    // but sort defensively — the file is hand-editable state). Phase 4 (F2):
+    // clients that still hold a live refresh token are evicted LAST — a burst
+    // of throwaway registrations (DCR churn is rate-limited but real) must not
+    // evict the connection that's actually in use. The cap stays hard: if
+    // everything is somehow live (pathological for one user), oldest-live goes.
     file.clients.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    while (file.clients.length > MAX_CLIENTS) file.clients.shift();
+    while (file.clients.length > MAX_CLIENTS) {
+      const evictable = file.clients.findIndex((c) => !liveClients.has(c.clientId));
+      file.clients.splice(evictable === -1 ? 0 : evictable, 1);
+    }
     await writeClientsFile(file);
   });
   return { ok: true, client };
