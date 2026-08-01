@@ -371,7 +371,7 @@ our only gate made this a merge-first prerequisite):
 
 ---
 
-## 10. MCP connector endpoint  🚧 (Phase 1 — built, not yet deployed)
+## 10. MCP connector endpoint — OAuth 2.1  🚧 (Phase 2 — built, not yet deployed; MCP_ENABLED=false on the box)
 
 **What it is:** a remote MCP server inside the app (`POST /vault/api/mcp`) exposing ONE
 read-only tool, `search_vault(query)` — embed the query, cosine-search the existing vector
@@ -379,38 +379,66 @@ index, return chunk excerpts + citations. Built so Claude.ai can connect as a cu
 connector. Retrieval only: no Gemini answer step, and no code path that writes to
 `/data/docs` or the index exists behind this endpoint at all.
 
-**Why the auth design looks the way it does (plain language):**
-- **Kill switch first.** The proxy 404s the MCP path unless `MCP_ENABLED=true` (the exact
-  string). A 404 means "this endpoint does not exist" — with the flag unset, an internet
-  scanner can't even learn there's something here to attack, and no auth code runs. Like
-  every gate in this app, it fails closed: unset/missing/typo'd env → off.
-- **Then a bearer token, in the proxy, not the route.** Phase 1 auth is a static token
-  (`Authorization: Bearer …` vs `MCP_STATIC_TOKEN`), checked in `proxy.ts` via
-  `hasValidMcpToken()` — the same pattern as the staleness cron secret (§8): scoped to
-  exactly one path (the token opens nothing else), constant-time compare (`timingSafeEqual`
-  over SHA-256 digests), and never falls open (no configured token ⇒ every request rejected).
-  Putting it in the proxy means the route handler is unreachable without auth by
-  construction — there's no "forgot the check in the handler" failure mode.
-- **Session cookies are deliberately NOT accepted on the MCP path.** The connector is a
-  machine; the browser is a human. Keeping the two auth planes disjoint means a browser
-  wandering onto the endpoint (CSRF, link tricks) authenticates as nobody, and the MCP
-  token can never ride along into the human app.
-- **Why a static token at all:** it's the cheap probe for an open question — whether
-  Claude.ai's connector client accepts our IP-literal HTTPS URL — using Claude's
-  `static_headers` (beta) connector auth, before investing in the full OAuth 2.1 server
-  (Phase 2, which replaces this token; the kill switch and proxy placement stay).
+**Auth is OAuth 2.1, and we are both halves.** Claude's custom connectors only speak
+OAuth (a Phase 1 `static_headers` probe was unavailable on this plan), so the app is now
+resource server AND authorization server. The Phase 1 static token is deleted; the two
+Phase 1 keepers survive unchanged: the `MCP_ENABLED` kill switch (404 first — with the
+flag unset the endpoint does not exist and no auth code runs) and gate-in-the-proxy
+placement (the route handler is unreachable without auth by construction).
 
-**Token hygiene:** generate with `openssl rand -base64url 32` on the box; lives only in
-`/opt/mba-vault/.env` (never git — repo is public); rotate by editing `.env` +
-`docker compose up -d --force-recreate app`; kill instantly by setting `MCP_ENABLED=false`
-(or removing it) and recreating.
+**The flow, in plain language** (each step is one moving part):
+1. **Discovery.** An unauthenticated `POST /vault/api/mcp` gets a `401` whose
+   `WWW-Authenticate: Bearer resource_metadata="…"` header points at our RFC 9728
+   metadata (`/vault/api/oauth/protected-resource-metadata`), which names the
+   authorization server (issuer `PUBLIC_ORIGIN/vault`); its RFC 8414 metadata
+   (`/vault/api/oauth/authorization-server-metadata`) lists every endpoint below. These
+   documents are public BY THE RFCs — they contain no secrets; they're the map, not the
+   keys. nginx also maps the root `/.well-known/*` probe paths onto them as a fallback.
+2. **Registration (RFC 7591).** Claude self-registers at `/vault/api/oauth/register`.
+   The real boundary here is the **redirect-URI allowlist**: only the documented Claude
+   callbacks are registrable — `https://claude.ai/api/mcp/auth_callback` (hosted
+   surfaces) and Claude Code's loopback `http://localhost|127.0.0.1/callback`
+   (port-agnostic, RFC 8252 §7.3) — so an authorization code can never be sent anywhere
+   else. Capped at 20 stored clients (oldest evicted; Claude DCRs a new client per
+   connection), IP rate-limited 5/hour.
+3. **Consent = the existing login.** `/vault/oauth/authorize` is session-gated like any
+   page: no session → the normal login (password + TOTP) with `?next=` returning here
+   (the `next` value is validated app-internal — no open redirects). The consent page
+   shows what's being granted (read-only `search_vault`) and the redirect host, then
+   POSTs to `/vault/api/oauth/decision`, which **re-validates every field** (hidden
+   inputs are untrusted) and only then mints a code. The consent POST is CSRF-protected
+   by the `SameSite=Lax` session cookie: a cross-site form POST arrives cookie-less and
+   the proxy 401s it before the handler runs. If the client or redirect URI doesn't
+   validate, we render an error and **never redirect** — redirecting to an unvalidated
+   URI is an open redirect that could carry a code.
+4. **PKCE (mandatory, S256 only).** Claude sends a `code_challenge`; the code is bound
+   to it, single-use, 60-second TTL, held in memory only. At the token endpoint Claude
+   must present the matching `code_verifier` — so an intercepted code is useless without
+   the secret that never left Claude. The code burns on first redemption even if the
+   exchange fails; replay can't succeed.
+5. **Tokens: opaque, hashed at rest.** `/vault/api/oauth/token` (form-urlencoded, RFC
+   6749 error codes) issues `mcp_at_…` (1 h) + `mcp_rt_…` (30 d). Why opaque and not
+   JWTs: one server verifies its own tokens, so JWT statelessness buys nothing and
+   costs instant revocation plus a signing-key lifecycle. Only SHA-256 digests are
+   stored (`/state/mcp/tokens.json`, containment-guarded) — stealing the state file
+   yields nothing usable, and lookup-by-digest makes verification timing-safe by
+   construction. Refresh tokens **rotate** (OAuth 2.1 public-client rule): the old one
+   dies in the same write that issues the new one; a replayed old token → `invalid_grant`,
+   which is exactly the code Claude's refresh logic keys on.
+6. **Verification on every MCP call**, in the proxy: kill switch (404) → bearer token vs
+   the hashed store (401 + the discovery header) → per-token rate limit, 30 requests /
+   5 min (429) — a runaway agent can't drain the Gemini embedding quota. Session cookies
+   are still NOT accepted on the MCP path (machine and human auth planes stay disjoint),
+   and an MCP token opens no other path.
 
-**How to verify:** unit tests (`gate-mcp.test.ts`, `proxy-mcp.test.ts`) cover
-enabled/disabled × valid/wrong/missing/malformed token × cookie-not-accepted ×
-token-opens-no-other-path; e2e (`e2e/mcp.spec.ts`) proves the 401s and an authenticated
-MCP `initialize` round-trip over real HTTP. On the box: `curl -k -X POST
-https://<ip>/vault/api/mcp` → `404` with the flag off, `401` with it on and no token,
-and a JSON-RPC response only with the real token.
+**How to verify:** unit tests cover PKCE (incl. the RFC 7636 test vector), the
+redirect-URI allowlist (incl. port-agnostic loopback), code single-use/expiry/binding,
+token hashing-at-rest (the test greps the state file for the raw token), refresh
+rotation, kill switch, cookie-not-accepted, and the 429. E2E runs the whole flow over
+real HTTP: register → consent → code → exchange → authenticated MCP `initialize` →
+rotation → replayed-code and wrong-verifier failures. On the box: `curl -k -X POST
+https://<ip>/vault/api/mcp` → `404` flag-off / `401`+`WWW-Authenticate` flag-on, and the
+metadata endpoints serve JSON unauthenticated.
 
 ---
 

@@ -19,6 +19,16 @@ const PUBLIC_PATHS = new Set([
   "/offline", // PWA offline fallback
   "/manifest.webmanifest",
   "/sw.js",
+  // OAuth AS surface (SECURITY.md §10) — public BY THE RFCs: metadata documents
+  // are how clients discover us (no secrets in them), and registration/token
+  // are used by machines that can't hold a session (their credentials are the
+  // code/refresh-token/PKCE material they carry; each has its own rate limit).
+  // The consent page (/oauth/authorize) and decision POST are deliberately NOT
+  // here — consent must ride the real login + TOTP session.
+  "/api/oauth/protected-resource-metadata",
+  "/api/oauth/authorization-server-metadata",
+  "/api/oauth/register",
+  "/api/oauth/token",
 ]);
 
 /** True for paths the gate must let through unauthenticated. */
@@ -74,11 +84,12 @@ export function hasValidCronSecret(pathname: string, headerValue: string | null 
 }
 
 // ---------------------------------------------------------------------------
-// MCP connector (SECURITY.md §10; Phase 1 — static bearer token; OAuth replaces
-// this in Phase 2).
-// Same design rules as the cron secret above: path-scoped, constant-time
-// compare, never falls open. Plus a kill switch: unless MCP_ENABLED=true the
-// endpoint doesn't exist at all (the proxy 404s before any auth question).
+// MCP connector (SECURITY.md §10). Phase 2: OAuth 2.1 access tokens verified
+// against the hashed store (lib/oauth/tokens.ts) — the Phase 1 static token is
+// gone. Same design rules as the cron secret above: path-scoped, never falls
+// open (an empty token store rejects everything). Plus the kill switch: unless
+// MCP_ENABLED=true the endpoint doesn't exist at all (the proxy 404s before
+// any auth question).
 // ---------------------------------------------------------------------------
 export const MCP_PATH = "/api/mcp";
 
@@ -87,14 +98,9 @@ export function isMcpEnabled(): boolean {
   return process.env.MCP_ENABLED === "true";
 }
 
-/** True only for the MCP path, with `Authorization: Bearer <token>` matching a
- *  CONFIGURED MCP_STATIC_TOKEN. Never falls open: unset/empty token env means
- *  every request is rejected, whatever it presents. */
-export function hasValidMcpToken(pathname: string, authorizationHeader: string | null | undefined): boolean {
-  if (pathname !== MCP_PATH) return false;
-  const token = process.env.MCP_STATIC_TOKEN;
-  if (!token || !authorizationHeader) return false;
+/** Extract the raw bearer token from an Authorization header, or null. */
+export function bearerToken(authorizationHeader: string | null | undefined): string | null {
+  if (!authorizationHeader) return null;
   const match = /^Bearer\s+(.+)$/i.exec(authorizationHeader);
-  if (!match) return false;
-  return safeEqual(match[1], token);
+  return match ? match[1] : null;
 }

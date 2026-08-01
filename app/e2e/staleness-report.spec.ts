@@ -149,6 +149,6 @@ test("the page is session-gated: no cookie → login redirect", async ({ browser
   const cleanContext = await browser.newContext(); // no loginViaCookie
   const page = await cleanContext.newPage();
   await page.goto("/vault/staleness");
-  await expect(page).toHaveURL(/\/vault\/login$/);
+  await expect(page).toHaveURL(/\/vault\/login(\?next=.*)?$/);
   await cleanContext.close();
 });
