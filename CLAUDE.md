@@ -39,4 +39,4 @@ nothing and block every PR. Branch-per-change, squash-merge, linear history on `
   lapses HTTPS within a week. This is the most fragile part — see `SECURITY.md`.
 - Keep secrets out of git — this repo is **public**.
 
-See `MBA-Vault - Architecture.md` for the full design.
+See `docs/MBA-Vault - Architecture.md` for the full design.
