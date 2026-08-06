@@ -2,7 +2,7 @@
 // extractors return. A "unit" is the smallest citable span — a PDF page, a slide,
 // or (for Word, which has no fixed pages) the whole file.
 
-export type DocKind = "pdf" | "docx" | "pptx";
+export type DocKind = "pdf" | "docx" | "pptx" | "txt";
 
 export interface SourceFile {
   absPath: string; // full path on the local machine

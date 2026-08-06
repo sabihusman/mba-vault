@@ -15,6 +15,7 @@ beforeAll(async () => {
   await writeFile(join(root, "Course A", "photo.png"), "x"); // image → excluded
   await mkdir(join(root, "Course B"), { recursive: true });
   await writeFile(join(root, "Course B", "paper.docx"), "x");
+  await writeFile(join(root, "Course B", "notes.txt"), "x");
   await mkdir(join(root, ".index"), { recursive: true });
   await writeFile(join(root, ".index", "vectors.bin"), "x"); // dot-dir → skipped
   await writeFile(join(root, "MBA-Vault - Architecture.md"), "x"); // not ingestible
@@ -25,12 +26,17 @@ afterAll(async () => {
 });
 
 describe("discoverFiles", () => {
-  it("returns only pdf/docx/pptx with course + kind, skipping everything else", async () => {
+  it("returns only pdf/docx/pptx/txt with course + kind, skipping everything else", async () => {
     const files = await discoverFiles(root);
     const rels = files.map((f) => f.relPath.replaceAll("\\", "/"));
 
     expect(new Set(rels)).toEqual(
-      new Set(["Course A/intro.pdf", "Course A/Week 1/deck.pptx", "Course B/paper.docx"]),
+      new Set([
+        "Course A/intro.pdf",
+        "Course A/Week 1/deck.pptx",
+        "Course B/paper.docx",
+        "Course B/notes.txt",
+      ]),
     );
 
     const byRel = new Map(files.map((f) => [f.relPath.replaceAll("\\", "/"), f]));
@@ -39,5 +45,6 @@ describe("discoverFiles", () => {
     expect(byRel.get("Course A/Week 1/deck.pptx")?.kind).toBe("pptx");
     expect(byRel.get("Course A/Week 1/deck.pptx")?.course).toBe("Course A");
     expect(byRel.get("Course B/paper.docx")?.kind).toBe("docx");
+    expect(byRel.get("Course B/notes.txt")?.kind).toBe("txt");
   });
 });

@@ -4,6 +4,7 @@ import type { ExtractedDoc, SourceFile } from "../types";
 import { extractPdf } from "./pdf";
 import { extractDocx } from "./docx";
 import { extractPptx } from "./pptx";
+import { extractTxt } from "./txt";
 
 export async function extractDocument(file: SourceFile): Promise<ExtractedDoc> {
   switch (file.kind) {
@@ -15,9 +16,12 @@ export async function extractDocument(file: SourceFile): Promise<ExtractedDoc> {
       return { file, units: await extractDocx(file.absPath), needsOcr: false };
     case "pptx":
       return { file, units: await extractPptx(file.absPath), needsOcr: false };
+    case "txt":
+      return { file, units: await extractTxt(file.absPath), needsOcr: false };
   }
 }
 
 export { extractPdf } from "./pdf";
 export { extractDocx } from "./docx";
 export { extractPptx } from "./pptx";
+export { extractTxt } from "./txt";
