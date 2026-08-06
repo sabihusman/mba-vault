@@ -1,5 +1,5 @@
-// Walk the coursework tree and yield the files we ingest. Only PDF/DOCX/PPTX are
-// ingestible — Excel is browse-only in v1, and images/other files are skipped.
+// Walk the coursework tree and yield the files we ingest. Only PDF/DOCX/PPTX/TXT
+// are ingestible — Excel is browse-only in v1, and images/other files are skipped.
 // The top-level folder becomes the "course" for citations.
 import { readdir } from "node:fs/promises";
 import { join, extname, relative, sep } from "node:path";
@@ -9,6 +9,7 @@ const KIND_BY_EXT: Record<string, DocKind | undefined> = {
   ".pdf": "pdf",
   ".docx": "docx",
   ".pptx": "pptx",
+  ".txt": "txt",
 };
 
 /**
