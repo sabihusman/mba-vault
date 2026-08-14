@@ -1,22 +1,30 @@
 /**
- * Full ingestion: discover → extract → chunk → embed (Gemini) → write the vector
- * index. Incremental by default (reuses embeddings for unchanged files); pass
- * --full to rebuild from scratch. Runs locally; needs GEMINI_API_KEY.
+ * Full ingestion CLI: discover → extract → chunk → embed (Gemini) → write the
+ * vector index. Incremental by default (reuses embeddings for unchanged files);
+ * pass --full to rebuild from scratch. Runs locally; needs GEMINI_API_KEY.
+ *
+ * The orchestration lives in src/run.ts so it can be tested with a fake
+ * embedder; this file is argv/env parsing and reporting only.
  *
  * Usage:
  *   GEMINI_API_KEY=... npm run ingest -- "C:\\Users\\sabih\\OneDrive\\Documents\\MBA Coursework" .index
  *   GEMINI_API_KEY=... npm run ingest -- "<src>" .index --full
+ *
+ * Env knobs:
+ *   INGEST_BATCH      chunks per embedding request (default 100)
+ *   INGEST_DELAY_MS   fixed pause between batches (default 0)
+ *   INGEST_CACHE_DIR  resume-cache directory (default .embed-cache)
  */
-import { runExtraction } from "../src/pipeline";
-import { createGeminiEmbedder, embedChunks, EMBED_MODEL, EMBED_DIMS } from "../src/embed";
-import { tryLoadPriorIndex, planEmbedding } from "../src/incremental";
-import { writeChunks, writeVectors, writeManifest, writeIngestReport, type Manifest } from "../src/store";
+import { runIngest } from "../src/run";
+import { createGeminiEmbedder, EMBED_DIMS } from "../src/embed";
 
 const root = process.argv[2] ?? process.env.INGEST_SRC;
 const outDir = process.argv[3] ?? process.env.INGEST_OUT ?? ".index";
 const full = process.argv.includes("--full");
 const apiKey = process.env.GEMINI_API_KEY;
 const batchSize = Number(process.env.INGEST_BATCH ?? "100");
+const delayMs = Number(process.env.INGEST_DELAY_MS ?? "0");
+const cacheDir = process.env.INGEST_CACHE_DIR ?? ".embed-cache";
 
 if (!root) {
   console.error('usage: npm run ingest -- "<source dir>" [out dir] [--full]');
@@ -28,56 +36,45 @@ if (!apiKey) {
 }
 
 const started = Date.now();
-
 console.log(`Extracting from ${root} …`);
-const { chunks, fileHashes, needsOcr, failures } = await runExtraction(root);
-console.log(`  ${chunks.length} chunks · ${needsOcr.length} PDFs need OCR · ${failures.length} failures`);
+if (delayMs > 0) console.log(`  pacing: ${delayMs}ms between batches`);
 
-const prior = full ? undefined : await tryLoadPriorIndex(outDir);
-const { toEmbed, reuse } = planEmbedding(chunks, fileHashes, prior);
+const result = await runIngest({
+  root,
+  outDir,
+  embedder: createGeminiEmbedder(apiKey),
+  cacheDir,
+  batchSize,
+  delayMs,
+  full,
+  onProgress: (p) => process.stdout.write(`\r  embedded ${p.done}/${p.total}`),
+  // Per-batch instrumentation. Intermediate SDK retries are invisible here (see
+  // embed.ts) — a latency spike is the only signal that one happened.
+  onBatchStat: (s) =>
+    process.stderr.write(
+      `\n  batch ${s.index} · ${s.count} chunks · ~${s.estTokens} tok · ${s.latencyMs}ms\n`,
+    ),
+});
+if (result.embedded > 0) process.stdout.write("\n");
+
+console.log(`  ${result.chunkCount} chunks · ${result.needsOcr.length} PDFs need OCR · ${result.failures.length} failures`);
 console.log(
-  prior
-    ? `Incremental: embedding ${toEmbed.length} new/changed chunks, reusing ${reuse.size}.`
-    : `Full build: embedding ${toEmbed.length} chunks.`,
+  `  reused ${result.reusedFromIndex} from the index, ${result.reusedFromCache} from the resume cache, embedded ${result.embedded}.`,
 );
 
-const embedder = createGeminiEmbedder(apiKey);
-const fresh = await embedChunks(embedder, toEmbed, batchSize, (p) => {
-  process.stdout.write(`\r  embedded ${p.done}/${p.total}`);
-});
-if (toEmbed.length > 0) process.stdout.write("\n");
-
-// Assemble vectors row-aligned to chunks (reused or freshly embedded).
-const vectors = new Float32Array(chunks.length * EMBED_DIMS);
-chunks.forEach((chunk, i) => {
-  const vector = reuse.get(chunk.id) ?? fresh.get(chunk.id);
-  if (!vector) throw new Error(`internal: missing vector for chunk ${chunk.id}`);
-  vectors.set(vector, i * EMBED_DIMS);
-});
-
-await writeChunks(outDir, chunks);
-await writeVectors(outDir, vectors);
-const manifest: Manifest = {
-  model: EMBED_MODEL,
-  dims: EMBED_DIMS,
-  count: chunks.length,
-  createdAt: new Date(started).toISOString(),
-  files: fileHashes,
-};
-await writeManifest(outDir, manifest);
-await writeIngestReport(outDir, {
-  runAt: new Date(started).toISOString(),
-  needsOcr,
-  failures,
-});
-
 const seconds = ((Date.now() - started) / 1000).toFixed(1);
-console.log(`\nIndex written to ${outDir}/ in ${seconds}s: ${chunks.length} vectors × ${EMBED_DIMS} dims`);
-if (needsOcr.length > 0) {
-  console.log(`  needs OCR (${needsOcr.length}):`);
-  for (const relPath of needsOcr) console.log(`    - ${relPath}`);
+console.log(
+  `\nIndex written to ${outDir}/ in ${seconds}s: ${result.chunkCount} vectors × ${EMBED_DIMS} dims`,
+);
+if (result.priorChunkCount > 0) {
+  const delta = result.chunkCount - result.priorChunkCount;
+  console.log(`  chunk count ${result.priorChunkCount} → ${result.chunkCount} (${delta >= 0 ? "+" : ""}${delta})`);
 }
-if (failures.length > 0) {
-  console.log(`  failures (${failures.length}):`);
-  for (const failure of failures) console.log(`    - ${failure.file}: ${failure.error}`);
+if (result.needsOcr.length > 0) {
+  console.log(`  needs OCR (${result.needsOcr.length}):`);
+  for (const relPath of result.needsOcr) console.log(`    - ${relPath}`);
+}
+if (result.failures.length > 0) {
+  console.log(`  failures (${result.failures.length}):`);
+  for (const failure of result.failures) console.log(`    - ${failure.file}: ${failure.error}`);
 }

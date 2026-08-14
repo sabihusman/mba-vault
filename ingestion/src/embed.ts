@@ -7,6 +7,9 @@ import { l2normalize } from "./vector";
 export const EMBED_MODEL = "gemini-embedding-001";
 export const EMBED_DIMS = 1536;
 
+/** Total attempts (including the first) before the SDK surfaces an error. */
+export const RETRY_ATTEMPTS = 5;
+
 export interface Embedder {
   /** Embed a batch of texts → one unit-length vector each, in input order. */
   embedBatch(texts: string[]): Promise<Float32Array[]>;
@@ -17,13 +20,24 @@ export function createGeminiEmbedder(
   model: string = EMBED_MODEL,
   dims: number = EMBED_DIMS,
 ): Embedder {
-  const ai = new GoogleGenAI({ apiKey });
+  // Retry lives in the SDK, not here. It splits retryable (408/429/5xx) from
+  // terminal and aborts immediately on the latter, so a 4xx that can never
+  // succeed doesn't burn the budget. It only engages when retryOptions is set —
+  // without it the SDK issues a bare fetch. Caveat: intermediate retries are
+  // invisible to callers (only the final failure surfaces, and ApiError carries
+  // just message+status), so per-batch latency is the only retry signal we get.
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: { retryOptions: { attempts: RETRY_ATTEMPTS } },
+  });
   return {
     async embedBatch(texts: string[]): Promise<Float32Array[]> {
       if (texts.length === 0) return [];
-      const response = await withRetry(() =>
-        ai.models.embedContent({ model, contents: texts, config: { outputDimensionality: dims } }),
-      );
+      const response = await ai.models.embedContent({
+        model,
+        contents: texts,
+        config: { outputDimensionality: dims },
+      });
       const embeddings = response.embeddings ?? [];
       if (embeddings.length !== texts.length) {
         throw new Error(`embedContent returned ${embeddings.length} embeddings for ${texts.length} inputs`);
@@ -39,24 +53,29 @@ export function createGeminiEmbedder(
   };
 }
 
-/** Retry transient failures (rate limits, blips) with exponential backoff. */
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> {
-  let attempt = 0;
-  for (;;) {
-    try {
-      return await fn();
-    } catch (err) {
-      attempt += 1;
-      if (attempt > maxRetries) throw err;
-      const delayMs = Math.min(30_000, 1000 * 2 ** (attempt - 1));
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-  }
-}
-
 export interface EmbedProgress {
   done: number;
   total: number;
+}
+
+/** Per-batch instrumentation. `estTokens` is chars/4 — an estimate, not billed usage. */
+export interface BatchStat {
+  index: number; // 0-based batch number
+  count: number; // chunks in this batch
+  estTokens: number;
+  latencyMs: number;
+  done: number;
+  total: number;
+}
+
+export interface EmbedOptions {
+  /** Fixed pause between batches. Default 0 — no adaptive behaviour by design. */
+  delayMs?: number;
+  /** Fired after each successful batch, before the next one starts. Awaited. */
+  onBatch?: (
+    batch: { chunks: { id: string; text: string }[]; vectors: Float32Array[] },
+    stat: BatchStat,
+  ) => void | Promise<void>;
 }
 
 /**
@@ -68,13 +87,41 @@ export async function embedChunks(
   chunks: { id: string; text: string }[],
   batchSize: number = 100,
   onProgress?: (progress: EmbedProgress) => void,
+  options: EmbedOptions = {},
 ): Promise<Map<string, Float32Array>> {
   const byId = new Map<string, Float32Array>();
+  const delayMs = options.delayMs ?? 0;
+  let index = 0;
+
   for (let start = 0; start < chunks.length; start += batchSize) {
+    // Pause *between* batches only — never before the first or after the last.
+    if (index > 0 && delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+
     const batch = chunks.slice(start, start + batchSize);
+    const startedAt = Date.now();
     const vectors = await embedder.embedBatch(batch.map((c) => c.text));
+    const latencyMs = Date.now() - startedAt;
+
     batch.forEach((chunk, j) => byId.set(chunk.id, vectors[j]!));
-    onProgress?.({ done: Math.min(start + batchSize, chunks.length), total: chunks.length });
+    const done = Math.min(start + batchSize, chunks.length);
+
+    // Awaited so a checkpoint is durable before the next batch is requested.
+    await options.onBatch?.(
+      { chunks: batch, vectors },
+      {
+        index,
+        count: batch.length,
+        estTokens: Math.round(batch.reduce((sum, c) => sum + c.text.length, 0) / 4),
+        latencyMs,
+        done,
+        total: chunks.length,
+      },
+    );
+
+    onProgress?.({ done, total: chunks.length });
+    index += 1;
   }
   return byId;
 }

@@ -40,6 +40,9 @@ playwright/.cache/
 # Local ingestion output (chunks.jsonl / vectors.bin / manifest.json)
 .index/
 .index-dryrun/
+# Embedding resume cache: local scratch, never shipped to the box. Holds vectors
+# derived from the coursework, so it must never reach this public repo.
+.embed-cache/
 # …EXCEPT the e2e fixture index: 4 hand-written SYNTHETIC chunks, zero real
 # course content (see app/e2e/mcp.spec.ts). Both lines are needed — git skips
 # negations inside a directory that is itself excluded.
