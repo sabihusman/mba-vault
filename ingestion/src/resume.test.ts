@@ -105,7 +105,7 @@ describe("resume", () => {
 
     // Nothing was written — the property that made the real 429 safe.
     await expect(stat(join(outB, "chunks.jsonl"))).rejects.toThrow();
-    expect(b.calls.length).toBe(4); // 2 batches × 2
+    expect(b.calls).toHaveLength(4); // 2 batches × 2
 
     // Resume against the same cache.
     const c = recordingEmbedder();
@@ -126,7 +126,7 @@ describe("resume", () => {
 
     // THE assertion. Without this, the test passes even if the cache is inert
     // and run C re-embedded everything from scratch.
-    expect(c.calls.length).toBe(a.calls.length - b.calls.length);
+    expect(c.calls).toHaveLength(a.calls.length - b.calls.length);
     expect(c.calls.some((text) => b.calls.includes(text))).toBe(false);
     expect([...b.calls, ...c.calls].sort()).toEqual([...a.calls].sort());
   });
@@ -210,7 +210,7 @@ describe("resume", () => {
     await runIngest({ ...common, outDir: outB, embedder: c.embedder, cacheDir: cacheB });
 
     // One more chunk had to be re-embedded than in the clean-resume case.
-    expect(c.calls.length).toBe(a.calls.length - b.calls.length + 1);
+    expect(c.calls).toHaveLength(a.calls.length - b.calls.length + 1);
     expect(await readFile(join(outB, "vectors.bin"))).toEqual(
       await readFile(join(outA, "vectors.bin")),
     );

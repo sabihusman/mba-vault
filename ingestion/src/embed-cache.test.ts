@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   cacheKey,
   openEmbedCache,
+  terminatedLines,
   CACHE_KEYS_FILE,
   CACHE_VECTORS_FILE,
 } from "./embed-cache";
@@ -34,6 +35,21 @@ describe("cacheKey", () => {
   it("does not collide when id and text boundaries shift", () => {
     // Length-prefixing the id prevents ("ab","c") and ("a","bc") colliding.
     expect(cacheKey("ab", "c")).not.toBe(cacheKey("a", "bc"));
+  });
+});
+
+describe("terminatedLines", () => {
+  it("returns only newline-terminated lines", () => {
+    expect(terminatedLines('{"key":"a"}\n{"key":"b"}\n')).toEqual(['{"key":"a"}', '{"key":"b"}']);
+  });
+
+  it("drops an unterminated final line — it was never committed", () => {
+    expect(terminatedLines('{"key":"a"}\n{"key":"b"')).toEqual(['{"key":"a"}']);
+  });
+
+  it("returns nothing for empty input or a single unterminated line", () => {
+    expect(terminatedLines("")).toEqual([]);
+    expect(terminatedLines("no newline here")).toEqual([]);
   });
 });
 
