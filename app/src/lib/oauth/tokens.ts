@@ -136,8 +136,13 @@ export async function verifyAccessToken(token: string, now: Date): Promise<Verif
  *  the type unambiguous anyway). Deliberately returns nothing — per the RFC,
  *  revoking an unknown/expired/garbage token is indistinguishable from
  *  success, so callers can't probe the store through this path. The write
- *  also prunes expired records (F4, free here). */
-export async function revokeToken(token: string): Promise<void> {
+ *  also prunes expired records (F4, free here) — using the SAME `now` the
+ *  caller passes, not the real wall clock: `writeTokensFile` prunes anything
+ *  with `expiresAt <= now`, so a real-time `new Date()` here would silently
+ *  wipe every OTHER still-live token in the file too once real time drifts
+ *  past whatever `now` a test (or a clock-skewed caller) is using — deleting
+ *  far more than the one token being revoked. */
+export async function revokeToken(token: string, now: Date): Promise<void> {
   if (!token.startsWith("mcp_at_") && !token.startsWith("mcp_rt_")) return;
   const key = digest(token);
   await serialized("tokens", async () => {
@@ -145,7 +150,7 @@ export async function revokeToken(token: string): Promise<void> {
     if (!(key in file.access) && !(key in file.refresh)) return; // nothing to do, skip the write
     delete file.access[key];
     delete file.refresh[key];
-    await writeTokensFile(file, new Date());
+    await writeTokensFile(file, now);
   });
 }
 

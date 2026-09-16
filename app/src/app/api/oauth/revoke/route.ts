@@ -27,7 +27,7 @@ export async function POST(request: Request): Promise<Response> {
   if (!token) {
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   }
-  await revokeToken(token);
+  await revokeToken(token, new Date());
   // Empty 200 per RFC 7009 §2.2 — same response whether anything was revoked.
   return new NextResponse(null, { status: 200 });
 }
