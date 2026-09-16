@@ -15,7 +15,8 @@
     "test:e2e": "playwright test",
     "provision:auth": "tsx scripts/provision-auth.ts",
     "staleness:bootstrap": "tsx scripts/staleness-bootstrap.ts",
-    "staleness:run": "tsx scripts/staleness-run.ts"
+    "staleness:run": "tsx scripts/staleness-run.ts",
+    "calibrate:relevance": "tsx scripts/calibrate-relevance.ts"
   },
   "dependencies": {
     "@google/genai": "^2.10.0",

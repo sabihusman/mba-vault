@@ -1,16 +1,19 @@
 import { describe, it, expect } from "vitest";
+import { fileURLToPath } from "node:url";
 import {
   answerQuestion,
   buildPrompt,
   sourceLabel,
   capHistory,
   retrievalQuery,
+  NOT_RELEVANT_MESSAGE,
   MAX_HISTORY_TURNS,
   MAX_HISTORY_ANSWER_CHARS,
   type AskDeps,
   type AskEvent,
   type Turn,
 } from "./answer";
+import { loadIndex } from "./index-store";
 import type { ChunkMeta, LoadedIndex } from "./index-store";
 
 function chunk(id: string, over: Partial<ChunkMeta> = {}): ChunkMeta {
@@ -56,6 +59,83 @@ describe("answerQuestion", () => {
       .map((e) => e.text)
       .join("");
     expect(text).toBe("The answer is [1].");
+  });
+});
+
+describe("answerQuestion — relevance gate (phase 2)", () => {
+  // 4 dims, chunks only on the first two axes — the third+fourth axes are
+  // unused by any chunk, so a query aimed there scores 0 against everything
+  // (unlike a fully-spanned space, where cos²+sin²+...=1 forces some chunk to
+  // score at least 1/√n — see search-vault.test.ts's identical reasoning).
+  function index4d(): LoadedIndex {
+    return index([chunk("a"), chunk("b")], [[1, 0, 0, 0], [0, 1, 0, 0]], 4);
+  }
+
+  it("never calls generate and returns the fixed decline when nothing clears the gate", async () => {
+    const loaded = index4d();
+    let generateCalled = false;
+    const deps: AskDeps = {
+      getIndex: async () => loaded,
+      embedQuery: async () => new Float32Array([0, 0, 1, 0]), // orthogonal to both chunks
+      async *generate() {
+        generateCalled = true;
+        yield "should never run";
+      },
+    };
+
+    const events: AskEvent[] = [];
+    for await (const event of answerQuestion(deps, "off-corpus question", [], 2)) events.push(event);
+
+    expect(generateCalled).toBe(false);
+    expect(events).toEqual([
+      { type: "citations", citations: [] },
+      { type: "text", text: NOT_RELEVANT_MESSAGE },
+    ]);
+  });
+
+  it("calls generate exactly as before when the top score clears the gate", async () => {
+    const loaded = index4d();
+    let generateCalled = false;
+    const deps: AskDeps = {
+      getIndex: async () => loaded,
+      embedQuery: async () => new Float32Array([1, 0, 0, 0]), // exact match on chunk "a"
+      async *generate() {
+        generateCalled = true;
+        yield "answer text";
+      },
+    };
+
+    const events: AskEvent[] = [];
+    for await (const event of answerQuestion(deps, "on-corpus question", [], 2)) events.push(event);
+
+    expect(generateCalled).toBe(true);
+    expect(events[0]).toMatchObject({ type: "citations" });
+    if (events[0].type === "citations") expect(events[0].citations.length).toBeGreaterThan(0);
+  });
+
+  it("gates an off-corpus query against the real committed 4-chunk fixture index", async () => {
+    const fixtureIndex = fileURLToPath(new URL("../../../test-fixtures/data/.index", import.meta.url));
+    const loaded = await loadIndex(fixtureIndex);
+    let generateCalled = false;
+    const deps: AskDeps = {
+      getIndex: async () => loaded,
+      // Equidistant (cosine 0.5) from all 4 orthonormal fixture chunks — see
+      // search-vault.test.ts's identical fixture-based test for the vector math.
+      embedQuery: async () => new Float32Array([1, 1, 1, 1]),
+      async *generate() {
+        generateCalled = true;
+        yield "should never run";
+      },
+    };
+
+    const events: AskEvent[] = [];
+    for await (const event of answerQuestion(deps, "something not in this vault at all")) events.push(event);
+
+    expect(generateCalled).toBe(false);
+    expect(events).toEqual([
+      { type: "citations", citations: [] },
+      { type: "text", text: NOT_RELEVANT_MESSAGE },
+    ]);
   });
 });
 

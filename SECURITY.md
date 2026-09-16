@@ -382,6 +382,18 @@ chunks FROM THE INDEX in page/slide order — never the filesystem, no parsers o
 connect as a custom connector. No Gemini answer step, and no code path that writes to
 `/data/docs` or the index exists behind this endpoint at all.
 
+**Relevance gate (2026-09):** `search_vault` refuses a query whose best match scores
+below a calibrated cosine threshold (`ASK_RELEVANCE_THRESHOLD`, default 0.58, pinned to
+the `gemini-embedding-001` embeddings — changing models invalidates the number) instead
+of returning off-corpus excerpts. The refusal text explicitly instructs the calling
+model not to answer from its own training data and to tell the user the vault has
+nothing on the topic — without that instruction, a "no results" response would just push
+the calling model to fill the gap itself, one layer up, with no citations at all. Same
+threshold and gate on the Ask route; different (user-facing, not model-facing) wording
+there. Known limitation: this only catches clearly off-corpus questions — a question in
+an adjacent subject the vault doesn't actually cover still passes and gets answered.
+Catching that needs reranking or an LLM relevance check; deferred.
+
 **Two scopes, both read-only:** `search` (search_vault) and `read`
 (list_files/get_document), enforced PER TOOL — the route hands the verified token's
 scopes to the tool handlers as authInfo; a token without the needed scope gets a
