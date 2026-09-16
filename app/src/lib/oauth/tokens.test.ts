@@ -75,9 +75,18 @@ describe("refresh rotation (OAuth 2.1 public client)", () => {
 });
 
 describe("revokeToken (RFC 7009)", () => {
+  // Regression: revokeToken used to prune with a hardcoded `new Date()`
+  // instead of the caller's `now`, even though writeTokensFile prunes
+  // anything with expiresAt <= now on every write. That was invisible the day
+  // it was written (real time ≈ NOW back then) but became a time bomb: once
+  // real wall-clock time drifted past NOW by more than the 30-day refresh
+  // TTL, every fixture token in this file looked expired relative to the REAL
+  // clock, so revoking ANY one token wiped the whole tokens.json — including
+  // the sibling credential this test checks survives. Passing NOW explicitly,
+  // consistently, everywhere (mint/revoke/verify) is what pins this down.
   it("revoking an access token kills it immediately", async () => {
     const pair = await mintTokenPair("c", "search", NOW);
-    await revokeToken(pair.accessToken);
+    await revokeToken(pair.accessToken, NOW);
     expect(await verifyAccessToken(pair.accessToken, NOW)).toBeNull();
     // The refresh token is untouched — it was a different credential.
     expect(await rotateRefreshToken(pair.refreshToken, NOW)).not.toBeNull();
@@ -85,14 +94,14 @@ describe("revokeToken (RFC 7009)", () => {
 
   it("revoking a refresh token kills rotation", async () => {
     const pair = await mintTokenPair("c", "search", NOW);
-    await revokeToken(pair.refreshToken);
+    await revokeToken(pair.refreshToken, NOW);
     expect(await rotateRefreshToken(pair.refreshToken, NOW)).toBeNull();
   });
 
   it("unknown/garbage tokens revoke silently (no probing oracle)", async () => {
-    await expect(revokeToken("mcp_at_unknown")).resolves.toBeUndefined();
-    await expect(revokeToken("mcp_rt_unknown")).resolves.toBeUndefined();
-    await expect(revokeToken("garbage")).resolves.toBeUndefined();
+    await expect(revokeToken("mcp_at_unknown", NOW)).resolves.toBeUndefined();
+    await expect(revokeToken("mcp_rt_unknown", NOW)).resolves.toBeUndefined();
+    await expect(revokeToken("garbage", NOW)).resolves.toBeUndefined();
   });
 });
 
@@ -100,7 +109,7 @@ describe("clientIdsWithLiveRefreshTokens", () => {
   it("reports clients with unexpired refresh tokens only", async () => {
     await mintTokenPair("live-client", "search", NOW);
     const expired = await mintTokenPair("dead-client", "search", NOW);
-    await revokeToken(expired.refreshToken);
+    await revokeToken(expired.refreshToken, NOW);
     const live = await clientIdsWithLiveRefreshTokens(NOW);
     expect(live.has("live-client")).toBe(true);
     expect(live.has("dead-client")).toBe(false);
