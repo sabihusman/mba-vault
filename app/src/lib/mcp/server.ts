@@ -25,6 +25,7 @@ import {
   clampCount,
   MAX_QUERY_CHARS,
   MCP_MAX_K,
+  NOT_RELEVANT_MESSAGE,
 } from "./search-vault";
 import { listFiles } from "./list-files";
 import { getDocument } from "./get-document";
@@ -92,12 +93,12 @@ function buildServer(): McpServer {
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) return text("Search is not configured (no embedding key).", true);
         const gemini = createGeminiClient(apiKey);
-        const hits = await searchVault(
+        const outcome = await searchVault(
           { getIndex, embedQuery: (q) => gemini.embedQuery(q) },
           query,
           clampCount(count),
         );
-        return text(formatHits(hits));
+        return text(outcome.relevant ? formatHits(outcome.hits) : NOT_RELEVANT_MESSAGE);
       }),
   );
 

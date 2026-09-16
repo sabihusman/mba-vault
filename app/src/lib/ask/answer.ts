@@ -4,7 +4,7 @@
 // can be tested without calling Gemini. Supports multi-turn follow-ups: prior Q&A
 // is folded into the prompt (capped) so references like "what about X?" resolve.
 import { search } from "./search";
-import { computeRelevanceStats, logRelevanceStats } from "./relevance";
+import { computeRelevanceStats, logRelevanceStats, passesRelevanceGate } from "./relevance";
 import type { LoadedIndex, Loc } from "./index-store";
 
 export const TOP_K = 8;
@@ -50,6 +50,13 @@ export type AskEvent =
   | { type: "citations"; citations: Citation[] }
   | { type: "text"; text: string };
 
+// User-facing decline for the off-topic gate (relevance-gate work order, phase
+// 2). Deliberately phrased to trip the client's isNotCovered() heuristic
+// (stream.ts) — "isn't covered" is one of its literal DECLINE_PATTERNS — so the
+// existing NotCoveredCard renders with no client changes needed.
+export const NOT_RELEVANT_MESSAGE =
+  "This question isn't covered in your coursework, so nothing was made up — try rephrasing, or browse your materials directly.";
+
 export interface AskDeps {
   getIndex(): Promise<LoadedIndex>;
   embedQuery(question: string): Promise<Float32Array>;
@@ -68,10 +75,20 @@ export async function* answerQuestion(
   // ("what about pricing?") still retrieves against its actual subject.
   const queryVector = await deps.embedQuery(retrievalQuery(question, recent));
   const hits = search(index, queryVector, k);
-  // Calibration instrumentation only (work order: relevance gate, phase 1). No
-  // filtering yet — logged so the 40-question calibration run has real numbers
-  // to look at before a cutoff is wired in.
-  logRelevanceStats(computeRelevanceStats(hits));
+  const stats = computeRelevanceStats(hits);
+  logRelevanceStats(stats);
+
+  // Whole-query gate on the top score only (relevance-gate work order, phase
+  // 2): a question with no relevant material at all gets a fixed decline and
+  // Gemini is never called — this is the "structured refusal" the work order
+  // asks for, not an LLM-generated one. Only catches clearly off-corpus
+  // questions (calibrated threshold 0.58); a near-miss still passes through
+  // and gets answered — known, deferred gap, not an oversight.
+  if (!passesRelevanceGate(stats.topScore)) {
+    yield { type: "citations", citations: [] };
+    yield { type: "text", text: NOT_RELEVANT_MESSAGE };
+    return;
+  }
 
   const citations: Citation[] = hits.map((hit, i) => ({
     n: i + 1,

@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { computeRelevanceStats, logRelevanceStats } from "./relevance";
+import {
+  computeRelevanceStats,
+  logRelevanceStats,
+  relevanceThreshold,
+  passesRelevanceGate,
+  RELEVANCE_THRESHOLD_ENV,
+  DEFAULT_RELEVANCE_THRESHOLD,
+} from "./relevance";
 import type { SearchHit } from "./search";
 import type { ChunkMeta } from "./index-store";
 
@@ -35,6 +42,61 @@ describe("computeRelevanceStats", () => {
       spread: 0.4, // 0.9 - 0.5
       topChunkChars: 5, // "abcde"
     });
+  });
+});
+
+describe("relevanceThreshold", () => {
+  afterEach(() => {
+    delete process.env[RELEVANCE_THRESHOLD_ENV];
+  });
+
+  it("falls back to the calibrated default when unset", () => {
+    delete process.env[RELEVANCE_THRESHOLD_ENV];
+    expect(relevanceThreshold()).toBe(DEFAULT_RELEVANCE_THRESHOLD);
+  });
+
+  it("uses a valid override", () => {
+    process.env[RELEVANCE_THRESHOLD_ENV] = "0.7";
+    expect(relevanceThreshold()).toBe(0.7);
+  });
+
+  // A garbage value must fall back to the default, never pass NaN through —
+  // NaN comparisons are always false, which would silently let every query
+  // through the gate regardless of score (mirrors envCap's reasoning in
+  // lib/staleness/env-caps.ts).
+  it.each(["not-a-number", "", "  ", "1.5", "-2"])(
+    "falls back to the default for an invalid/out-of-range value %j",
+    (raw) => {
+      process.env[RELEVANCE_THRESHOLD_ENV] = raw;
+      expect(relevanceThreshold()).toBe(DEFAULT_RELEVANCE_THRESHOLD);
+    },
+  );
+
+  it("accepts the boundary values -1 and 1", () => {
+    process.env[RELEVANCE_THRESHOLD_ENV] = "1";
+    expect(relevanceThreshold()).toBe(1);
+    process.env[RELEVANCE_THRESHOLD_ENV] = "-1";
+    expect(relevanceThreshold()).toBe(-1);
+  });
+});
+
+describe("passesRelevanceGate", () => {
+  it("fails a null top score (no hits at all)", () => {
+    expect(passesRelevanceGate(null, 0.58)).toBe(false);
+  });
+
+  it("fails a score strictly below the threshold", () => {
+    expect(passesRelevanceGate(0.557, 0.58)).toBe(false);
+  });
+
+  it("passes a score at or above the threshold", () => {
+    expect(passesRelevanceGate(0.58, 0.58)).toBe(true);
+    expect(passesRelevanceGate(0.9, 0.58)).toBe(true);
+  });
+
+  it("uses relevanceThreshold() as the default when no threshold is passed", () => {
+    expect(passesRelevanceGate(DEFAULT_RELEVANCE_THRESHOLD - 0.01)).toBe(false);
+    expect(passesRelevanceGate(DEFAULT_RELEVANCE_THRESHOLD)).toBe(true);
   });
 });
 
