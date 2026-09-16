@@ -4,6 +4,7 @@
 // can be tested without calling Gemini. Supports multi-turn follow-ups: prior Q&A
 // is folded into the prompt (capped) so references like "what about X?" resolve.
 import { search } from "./search";
+import { computeRelevanceStats, logRelevanceStats } from "./relevance";
 import type { LoadedIndex, Loc } from "./index-store";
 
 export const TOP_K = 8;
@@ -67,6 +68,10 @@ export async function* answerQuestion(
   // ("what about pricing?") still retrieves against its actual subject.
   const queryVector = await deps.embedQuery(retrievalQuery(question, recent));
   const hits = search(index, queryVector, k);
+  // Calibration instrumentation only (work order: relevance gate, phase 1). No
+  // filtering yet — logged so the 40-question calibration run has real numbers
+  // to look at before a cutoff is wired in.
+  logRelevanceStats(computeRelevanceStats(hits));
 
   const citations: Citation[] = hits.map((hit, i) => ({
     n: i + 1,
